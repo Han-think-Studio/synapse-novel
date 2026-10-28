@@ -17,8 +17,9 @@ from typing import Any
 
 SOURCE_ROOT_ENV = "SYNAPSE_SOURCE_ROOT"
 CANONICAL_ASSESSMENT_SOURCE = "canonical_substantive_content_checker"
-REPRODUCIBILITY_SCHEMA_VERSION = "synapse.mini.reproducibility.v1"
-COMPARISON_SCHEMA_VERSION = "synapse.mini.comparison.v1"
+REPRODUCIBILITY_SCHEMA_VERSION = "synapse.novel.reproducibility.v1"
+COMPARISON_SCHEMA_VERSION = "synapse.novel.comparison.v1"
+LEGACY_COMPARISON_SCHEMA_VERSIONS = {"synapse.mini.comparison.v1"}
 COMPARISON_DIMENSIONS = (
     "idea",
     "preset",
@@ -311,8 +312,8 @@ def compare_comparison_records(
     if not isinstance(before, dict) or not isinstance(after, dict):
         raise TypeError("comparison records must be objects")
     if (
-        before.get("schema_version") != COMPARISON_SCHEMA_VERSION
-        or after.get("schema_version") != COMPARISON_SCHEMA_VERSION
+        before.get("schema_version") not in {COMPARISON_SCHEMA_VERSION, *LEGACY_COMPARISON_SCHEMA_VERSIONS}
+        or after.get("schema_version") not in {COMPARISON_SCHEMA_VERSION, *LEGACY_COMPARISON_SCHEMA_VERSIONS}
     ):
         return {
             "schema_version": COMPARISON_SCHEMA_VERSION,
@@ -355,7 +356,7 @@ def compare_comparison_records(
 
 def _plan_result(root: Path, plan: Any) -> dict[str, Any]:
     return {
-        "schema_version": "synapse.mini.plan.v1",
+        "schema_version": "synapse.novel.plan.v1",
         "status": "PLAN_ONLY",
         "result_kind": "scaffold_plan",
         "operation": {
@@ -477,7 +478,7 @@ def _evaluate(
             "Run the same check again after the fixes.",
         ]
     return {
-        "schema_version": "synapse.mini.content-check.v1",
+        "schema_version": "synapse.novel.content-check.v1",
         "result_kind": "content_check",
         "operation": {
             "kind": operation_kind,
@@ -629,7 +630,7 @@ def main() -> int:
 
         return synapse_novel_setup.main(sys.argv[1:])
     parser = argparse.ArgumentParser(
-        description="Synapse Novel: canonical idea planning and read-only content checks"
+        description="Synapse Novel: deterministic project planning, content checks, and beat-by-beat writing flow"
     )
     parser.add_argument(
         "--source-root",
@@ -637,7 +638,18 @@ def main() -> int:
     )
     subparsers = parser.add_subparsers(dest="command", required=True)
 
-    plan_parser = subparsers.add_parser("plan", help="build a deterministic plan without writes")
+    novel_parser = subparsers.add_parser(
+        "novel",
+        help="seed a novel project, confirm its plan, request and check beats, then lock and assemble them",
+        add_help=False,
+    )
+    novel_parser.add_argument(
+        "novel_args",
+        nargs=argparse.REMAINDER,
+        help="arguments for the novel edition flow",
+    )
+
+    plan_parser = subparsers.add_parser("plan", help="plan a novel from an idea without writing files")
     plan_parser.add_argument("idea", help="idea text or a UTF-8 text file")
     plan_parser.add_argument("--preset", required=True, help="one of the fixed presets (no default)")
     plan_parser.add_argument("--project-name", default="")
@@ -649,7 +661,7 @@ def main() -> int:
     )
 
     check_parser = subparsers.add_parser(
-        "check", help="read an existing workspace and check substantive required files"
+        "check", help="check a novel project's required files without changing the workspace"
     )
     check_parser.add_argument("workspace", type=Path)
     check_parser.add_argument("--idea", required=True, help="idea text or a UTF-8 text file")
@@ -663,7 +675,7 @@ def main() -> int:
     )
 
     demo_parser = subparsers.add_parser(
-        "demo", help="check a JSON path-to-content proposal without writing it"
+        "demo", help="check proposed novel project files supplied as JSON without writing them"
     )
     demo_parser.add_argument("--idea", required=True, help="idea text or a UTF-8 text file")
     demo_parser.add_argument("--content-json", required=True, type=Path)
@@ -679,8 +691,7 @@ def main() -> int:
     impact_parser = subparsers.add_parser(
         "impact",
         help=(
-            "list the files a change reaches (one step, or through others) and what to ask about each, so "
-            "they are changed together; reads only"
+            "for a novel project, list files affected by a change and the questions to review; reads only"
         ),
     )
     impact_parser.add_argument(
@@ -709,8 +720,8 @@ def main() -> int:
     canon_parser = subparsers.add_parser(
         "canon",
         help=(
-            "ask which file decides each fact of a project (a ZIP, or a new idea) and say whether "
-            "its structure is settled, or confirm the canon values an assistant proposed; no model, "
+            "for a novel project, ask which file decides each fact (a ZIP or a new idea) and whether "
+            "its structure is settled, or confirm proposed canon values; no model, "
             "writes only a file you name"
         ),
     )
@@ -728,17 +739,6 @@ def main() -> int:
         "canon_args",
         nargs=argparse.REMAINDER,
         help="that command's own arguments; run `python -m synapse.core.canon_gate --help` (or canon_apply, canon_values_cli) to list them",
-    )
-
-    novel_parser = subparsers.add_parser(
-        "novel",
-        help="seed a novel, confirm its plan, request and check beats, then lock and assemble them",
-        add_help=False,
-    )
-    novel_parser.add_argument(
-        "novel_args",
-        nargs=argparse.REMAINDER,
-        help="arguments for the novel edition flow",
     )
 
     for name, text in (

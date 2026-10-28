@@ -4,8 +4,8 @@ A stdio server speaking the Model Context Protocol (JSON-RPC 2.0, one JSON messa
 adds no model, no network and no new rules. Every tool is a thin call into code the novel edition already
 ships:
 
-* ``synapse.core.preset_pipeline`` -- the two shipped novel presets, ``novel_upload_review`` and
-  ``novel_philosophy_depth``, the task packet, strict response check, and reviewed run record.
+* ``synapse.core.preset_pipeline`` -- the registered edition menu, task packet, strict response check,
+  and reviewed run record.
 * ``synapse.core.scaffold`` and the substantive-content checker -- ``plan`` and ``check``.
 * ``synapse.core.canon_gate`` -- the canon questions for a project or an idea.
 * ``synapse.core.canon_closure`` and ``canon_receipt`` -- whether the confirmed canon values are settled, and a
@@ -241,7 +241,7 @@ def _run_summary(pp: Any, run: dict[str, Any]) -> dict[str, Any]:
 
 
 def tool_list_presets(_: dict[str, Any]) -> Any:
-    return list(_core()["pp"].list_presets())
+    return list(_core()["pp"].list_presets("novel"))
 
 
 def tool_new_run(arguments: dict[str, Any]) -> Any:
@@ -840,6 +840,7 @@ def _novel_project(arguments: dict[str, Any], allowed: frozenset[str], tool: str
 def tool_novel_seed(arguments: dict[str, Any]) -> Any:
     project = _novel_project(arguments, frozenset({"project", "seed_file"}), "synapse_novel_seed")
     seed_file = _inside(_need(arguments, "seed_file", str), "seed_file")
+    project.mkdir(parents=True, exist_ok=True)
     return _edition_flow().seed_project(project, seed_file)
 
 
@@ -967,7 +968,7 @@ TOOLS: dict[str, dict[str, Any]] = {
         "readOnly": True,
     },
     "synapse_list_presets": {
-        "description": "The two Synapse Novel presets: novel_upload_review and novel_philosophy_depth, each with its label, required inputs, and tasks.",
+        "description": "The Synapse Novel presets, each with its label, required inputs, and tasks.",
         "inputSchema": _schema({}, []),
         "handler": tool_list_presets,
         "readOnly": True,

@@ -3,8 +3,8 @@
   "version": "1.0.0",
   "status": "FIXED_PRESETS_MODEL_UNASSESSED",
   "presets": [
-    "novel_philosophy_depth",
-    "novel_upload_review"
+    "novel_upload_review",
+    "novel_philosophy_depth"
   ],
   "common": "common.json",
   "execution": "Explicit selection only (2 presets, no default). Dispatch is operator-approved, one task per request.",

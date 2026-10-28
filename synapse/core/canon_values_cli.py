@@ -1,6 +1,6 @@
 """The command line for canon values, and the only place a value is confirmed (DEC-0205).
 
-An AI may propose values (``canon_proposal``, over the mini MCP) but never confirm one. The confirming half is a
+An AI may propose values (``canon_proposal``, over the local MCP) but never confirm one. The confirming half is a
 command a person runs in their own terminal. It shows the value and the words it came from, and asks the person to
 type, themselves, one line of their own. Only then does a value become ``CONFIRMED``.
 

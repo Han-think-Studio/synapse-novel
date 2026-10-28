@@ -28,11 +28,11 @@ The plan record includes an input fingerprint made from the project's seed file 
 
 ## Try the synthetic example
 
-The sample is one scene, `ch1s1`, with three beats from a synthetic story about a lighthouse. Its seed, plan, and sample prose are synthetic. Follow the complete [example walkthrough](editions/novel/examples/novel/README.md); it confirms every proposed seed key, requests, checks, and locks beats 1–3, reads status, then assembles the scene.
+The sample is one scene, `ch1s1`, with three beats from a synthetic story about a lighthouse. Its seed, plan, and sample prose are synthetic. Follow the complete [example walkthrough](editions/novel/examples/novel/README.md); it confirms every proposed seed key, requests, checks, and locks beats 1–3, reads status, then assembles the scene. A project's stable identity is saved at seed time, so you can move its project folder.
 
-A lock becomes stale if the locked beat text changes, the confirmed plan or its seed/value inputs change, the canon block changes, or an earlier beat in the same scene changes. Recover in order: read `status`; repair and reconfirm the plan if its inputs changed; start at the earliest stale beat; request it again after the plan, canon block, or an earlier beat it depends on changed, then check and lock it; continue through later beats in scene order; read status again; assemble only when no beat is stale or unlocked. Use a new output path because assembly refuses to overwrite a file.
+A lock becomes stale if the locked beat text changes, the confirmed plan or its seed/value inputs change, the canon block changes, or an earlier beat in the same scene changes. Recover in order: read `status`; repair and reconfirm the plan if its inputs changed; start at the earliest stale beat; request it again after the plan, canon block, or an earlier beat it depends on changed, then check and lock it; request, check, and lock every later beat in scene order; read status again; assemble only when no beat is stale or unlocked. Use a new output path because assembly refuses to overwrite a file.
 
-The MCP server reads and writes only paths inside the existing folder registered as `SYNAPSE_NOVEL_ROOT`. Keep seed files, plans, beat inputs, and the project under that folder.
+The MCP server reads and writes only paths inside the existing folder registered as `SYNAPSE_NOVEL_ROOT`. It creates a requested project folder there when seeding. Keep seed files, plans, beat inputs, and the project under that folder.
 
 ## Project references
 

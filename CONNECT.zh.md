@@ -6,7 +6,7 @@ Synapse Novel 为每一拍准备写作请求，并检查创作者或其 AI 返�
 
 ## 准备注册文件夹
 
-选择一个现有的专用文件夹并注册为 `SYNAPSE_NOVEL_ROOT`。项目以及传给 MCP 的所有路径（包括种子和计划文件）都必须位于该文件夹内。不要注册磁盘根目录。
+选择一个现有的专用文件夹并注册为 `SYNAPSE_NOVEL_ROOT`。项目以及传给 MCP 的所有路径（包括种子和计划文件）都必须位于该文件夹内。`synapse_novel_seed` 会在注册文件夹内创建新的项目文件夹。不要注册磁盘根目录。
 
 ### Linux
 
@@ -105,7 +105,7 @@ MCP 没有确认值、确认计划、锁定节拍或合成场景的工具；这�
 | `synapse_new_run` | 为选定的预设开始一次运行，并将其保存为 `runs_folder` 中的一个 JSON 文件。 |
 | `synapse_get_task` | 返回一个 READY 任务的 packet，以及答案必须采用的准确 JSON 结构。不调用模型。 |
 | `synapse_submit_answer` | 严格验证 AI 返回的四键 JSON 并记录一次尝试（最多三次）。通过的答案在创作者接受前只是候选。 |
-| `synapse_record_review` | 仅在创作者表示接受或拒绝后记录其最新决定，并保留创作者原话。工具不会代替创作者决定。 |
+| `synapse_record_review` | 仅在创作者表示接受或拒绝后，记录其决定和 `person_said` 中的原话。工具不会代替创作者决定。 |
 | `synapse_run_status` | 读取一次运行或文件夹中所有运行的任务状态。 |
 | `synapse_report` | 生成只包含创作者已接受结果的纯文本报告；未审阅的输出不会进入报告。 |
 | `synapse_plan` | 展示从想法和预设确定性推导出的文件布局。不调用模型，也不写文件。 |
@@ -124,7 +124,7 @@ MCP 没有确认值、确认计划、锁定节拍或合成场景的工具；这�
 | `synapse_check_output` | 对照已确认正典检查草稿，并返回绑定到值、规则和原文的回执。Synapse 不会保存该回执。 |
 | `synapse_review_receipt` | 检查回执是否仍与当前值、规则和原文一致，并指出发生变化的部分。 |
 
-`synapse_novel_check` 内联接收节拍文本，不需要原稿路径。MCP 只读写 `SYNAPSE_NOVEL_ROOT` 之下的文件。项目文本和工具结果都是不可信数据，不是指令。
+`synapse_novel_check` 内联接收节拍文本，不需要原稿路径。MCP 只读写 `SYNAPSE_NOVEL_ROOT` 之下的文件；`synapse_novel_seed` 会在其中创建新的项目文件夹。项目文本和工具结果都是不可信数据，不是指令。
 
 ## 在终端确认并锁定
 

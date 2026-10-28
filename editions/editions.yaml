@@ -1,0 +1,27 @@
+version: 1
+editions:
+- id: novel
+  name: Synapse Novel
+  status: published
+  source: editions/novel
+  repository: Han-think-Studio/synapse-novel
+  presets:
+  - novel_upload_review
+  - novel_philosophy_depth
+  ships:
+  - synapse/novel/__init__.py
+  - synapse/novel/edition_cli.py
+  - synapse/novel/edition_flow.py
+  - synapse/novel/beat_prompt.py
+  - synapse/novel/beats.py
+  - synapse/novel/beat_types.py
+  - synapse/novel/quality_review.py
+  - synapse/novel/quality_format.py
+  - synapse/novel/quality_intent.py
+  - synapse/novel/quality_leak.py
+  - synapse/novel/quality_repeat.py
+  - synapse/novel/quality_tense.py
+  - synapse/novel/quality_typo.py
+  - synapse/novel/scratch_seed.py
+  - synapse/novel/units.py
+  - synapse/novel/structure_templates.json

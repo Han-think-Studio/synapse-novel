@@ -10,7 +10,7 @@ import re
 import sys
 import uuid
 from collections.abc import Callable, Mapping, Sequence
-from dataclasses import asdict, dataclass
+from dataclasses import asdict
 from datetime import datetime
 from pathlib import Path
 from typing import Any
@@ -31,6 +31,7 @@ from synapse.novel.scratch_seed import scratch_seed_from_payload, seed_values
 
 PLAN_SCHEMA = "synapse-novel-edition-plan.v1"
 SEED_SCHEMA = "synapse-novel-edition-seed.v1"
+PROJECT_SCHEMA = "synapse-novel-edition-project.v1"
 REQUEST_SCHEMA = "synapse-novel-edition-request.v1"
 CHECK_SCHEMA = "synapse-novel-edition-check.v1"
 MAX_JSON_BYTES = 4 * 1024 * 1024
@@ -40,13 +41,14 @@ _CONTEXT_MAX_CHARS = 4000
 _SCENE_ID = re.compile(r"^ch[1-9][0-9]*s[1-9][0-9]*$")
 
 
-@dataclass(frozen=True, slots=True)
 class FlowError(ValueError):
-    """A caller-facing flow problem with the mini's stable exit code."""
+    """A caller-facing flow problem with its stable exit code."""
 
-    code: int
-    message: str
-    result: dict[str, Any] | None = None
+    def __init__(self, code: int, message: str, result: dict[str, Any] | None = None) -> None:
+        super().__init__(message)
+        self.code = code
+        self.message = message
+        self.result = result
 
     def __str__(self) -> str:
         return self.message
@@ -138,6 +140,13 @@ def _novel(project: Path) -> Path:
 
 
 def _project_id(project: Path) -> str:
+    identity_path = _novel(project) / "project.json"
+    if identity_path.is_file():
+        identity = _read_json(identity_path)
+        project_id = identity.get("project_id")
+        if identity.get("schema") != PROJECT_SCHEMA or not isinstance(project_id, str) or not project_id.strip():
+            raise FlowError(canon_values_cli.CANNOT_RUN, "프로젝트 정체 기록의 형식이 맞지 않습니다.")
+        return project_id
     return "novel-" + _hash_bytes(str(project.resolve()).encode("utf-8"))[:24]
 
 
@@ -326,6 +335,7 @@ def _quality_advice(text: str, scene: Mapping[str, Any], beat: Any) -> dict[str,
         start_state=beat.start_state,
         end_state=beat.end_state,
     )
+    quality.pop("quality_retry", None)
     quality["advisory"] = True
     quality["typo_suspicions"] = []
     quality["typo_review"] = {
@@ -369,19 +379,22 @@ def _current_previous_content(
 def seed_project(project: str | Path, seed_file: str | Path) -> dict[str, Any]:
     root = _root(project)
     folder = _novel(root)
-    targets = (_seed_path(root), _seed_text_path(root), _values_path(root))
+    identity_path = _novel(root) / "project.json"
+    targets = (_seed_path(root), _seed_text_path(root), _values_path(root), identity_path)
     if any(path.exists() for path in targets):
         raise FlowError(canon_values_cli.CANNOT_RUN, "씨앗 자료가 이미 있어 덮어쓰지 않았습니다.")
     payload = _read_json(Path(seed_file).expanduser().resolve())
+    project_id = "novel-" + uuid.uuid4().hex
     try:
         seed = scratch_seed_from_payload(payload)
-        store, _claims, source = seed_values(seed, _project_id(root))
+        store, _claims, source = seed_values(seed, project_id)
     except (TypeError, ValueError) as exc:
         raise FlowError(canon_values_cli.CANNOT_RUN, f"씨앗 내용을 확인할 수 없습니다: {exc}") from exc
     folder.mkdir(parents=True, exist_ok=True)
     created: list[Path] = []
     try:
         for path, data in (
+            (identity_path, _json_bytes({"schema": PROJECT_SCHEMA, "project_id": project_id})),
             (_seed_path(root), _json_bytes({"schema": SEED_SCHEMA, "seed": payload})),
             (_seed_text_path(root), source.encode("utf-8")),
         ):
@@ -771,7 +784,7 @@ def _status(project: Path) -> dict[str, Any]:
                     **({"next_step": _stale_next_step(reason)} if is_stale and reason else {}),
                 }
             )
-    return {
+    result = {
         "plan": {
             "sha256": plan_hash,
             "confirmed": _current_confirmation(project, plan_hash) is not None,
@@ -780,6 +793,9 @@ def _status(project: Path) -> dict[str, Any]:
         "beats": beats,
         "stale": stale,
     }
+    if not current:
+        result["next_step"] = "씨앗이나 정본 값이 바뀌었습니다. plan을 다시 실행하고 터미널에서 새 계획을 확인하세요."
+    return result
 
 
 def status(project: str | Path) -> dict[str, Any]:
@@ -941,13 +957,17 @@ def _dispatch(args: argparse.Namespace, *, ask: Callable[[], str], interactive: 
         return canon_values_cli.DONE, _lock_beat(args.project, args.scene, args.beat, words=words, now=now())
     if args.command == "status":
         result = status(args.project)
-        return (canon_values_cli.NOT_DONE if result["stale"] else canon_values_cli.DONE), result
+        stale_plan = result.get("plan") is not None and result["plan"].get("current") is False
+        return (canon_values_cli.NOT_DONE if result["stale"] or stale_plan else canon_values_cli.DONE), result
     if args.command == "assemble":
         return canon_values_cli.DONE, assemble_scene(args.project, args.scene, args.out)
     raise FlowError(canon_values_cli.CANNOT_RUN, "알 수 없는 novel 명령입니다.")
 
 
 def _refusal_message(result: Mapping[str, Any]) -> str:
+    next_step = result.get("next_step")
+    if isinstance(next_step, str) and next_step.strip():
+        return next_step
     problems = result.get("problems")
     if isinstance(problems, list):
         first = next((item for item in problems if isinstance(item, str) and item.strip()), None)

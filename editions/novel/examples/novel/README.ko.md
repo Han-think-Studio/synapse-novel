@@ -23,9 +23,9 @@ python editions/novel/synapse_novel.py novel seed --project .work/lighthouse --s
 - `work.opposition`
 - `work.timeframe`
 - `work.ending_direction`
-- `character.한도윤`, `character.한도윤.age`, `character.한도윤.sex`
-- `character.서이나`, `character.서이나.age`, `character.서이나.sex`
-- `character.오민규`, `character.오민규.age`, `character.오민규.sex`
+- `character.한도윤.description`, `character.한도윤.age`, `character.한도윤.sex`
+- `character.서이나.description`, `character.서이나.age`, `character.서이나.sex`
+- `character.오민규.description`, `character.오민규.age`, `character.오민규.sex`
 - `rule.prohibition.0001`
 - `rule.requirement.0001`
 
@@ -46,7 +46,7 @@ python editions/novel/synapse_novel.py novel plan --project .work/lighthouse --p
 python editions/novel/synapse_novel.py novel plan-confirm --project .work/lighthouse
 ~~~
 
-두 번째 명령에서는 사람이 터미널에서 자기 말을 입력합니다. 계획 해시는 이 프로젝트의 저장된 `seed.json`, `canon-values.json`, 정본 항목을 입력 지문으로 포함합니다. 씨앗이나 정본 값이 바뀌면 비트를 요청하기 전에 `plan`을 다시 실행하고 새 해시를 확인합니다.
+두 번째 명령에서는 사람이 터미널에서 자기 말을 입력합니다. 계획 해시는 이 프로젝트의 저장된 `seed.json`, `canon-values.json`, 정본 항목을 입력 지문으로 포함합니다. 프로젝트 정체는 씨앗 때 저장되므로 폴더를 옮겨도 유지됩니다. 정체 기록이 없는 기존 프로젝트는 기존 경로 기반 방식으로 읽습니다. 씨앗이나 정본 값이 바뀌면 비트를 요청하기 전에 `plan`을 다시 실행하고 새 해시를 확인합니다.
 
 ## 3. 비트별 요청, 검사, 잠금
 
@@ -89,9 +89,9 @@ python editions/novel/synapse_novel.py novel assemble --project .work/lighthouse
 1. `status`를 읽고 장면별로 가장 앞선 stale 비트를 확인합니다.
 2. 씨앗이나 정본 값이 바뀌었다면 `plan`을 다시 실행하고 터미널에서 새 계획 해시를 확인합니다.
 3. 가장 앞선 stale 비트부터 시작합니다. 계획·정본 맥락 또는 앞선 비트가 바뀌었다면 `beat`를 다시 실행합니다. 글 파일을 검사하고 터미널에서 잠급니다. 해당 비트의 저장 글만 바뀌었다면 다시 검사하고 잠급니다.
-4. 각 요청은 직전 잠금 비트에 기대므로 같은 장면의 뒤 비트도 순서대로 반복합니다.
+4. 각 요청은 직전 잠금 비트에 기대므로 같은 장면의 뒤 비트도 차례대로 다시 요청하고, 글을 검사한 뒤 잠급니다.
 5. status를 다시 읽습니다. 모든 비트가 최신이고 잠긴 경우에만 조립합니다.
 
 로컬 MCP 서버는 기존 `SYNAPSE_NOVEL_ROOT` 폴더 아래만 읽고 씁니다. 프로젝트와 전달하는 씨앗·계획·글 입력을 모두 이 폴더 아래에 두세요. MCP에는 값·계획 확인, 비트 잠금, 장면 조립 도구가 없습니다.
 
-[판본 안내서](../../README.ko.md), [English example](README.md), [中文示例](README.zh.md)를 보세요.
+[판본 안내서](../../README.ko.md), [中文示例](README.zh.md)를 보세요.

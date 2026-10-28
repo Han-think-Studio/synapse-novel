@@ -23,9 +23,9 @@ The `seed` result lists `proposed` keys. This seed proposes exactly:
 - `work.opposition`
 - `work.timeframe`
 - `work.ending_direction`
-- `character.한도윤`, `character.한도윤.age`, `character.한도윤.sex`
-- `character.서이나`, `character.서이나.age`, `character.서이나.sex`
-- `character.오민규`, `character.오민규.age`, `character.오민규.sex`
+- `character.한도윤.description`, `character.한도윤.age`, `character.한도윤.sex`
+- `character.서이나.description`, `character.서이나.age`, `character.서이나.sex`
+- `character.오민규.description`, `character.오민규.age`, `character.오민규.sex`
 - `rule.prohibition.0001`
 - `rule.requirement.0001`
 
@@ -46,7 +46,7 @@ python editions/novel/synapse_novel.py novel plan --project .work/lighthouse --p
 python editions/novel/synapse_novel.py novel plan-confirm --project .work/lighthouse
 ~~~
 
-The second command needs the person's own words in a terminal. The plan hash covers an input fingerprint of this project's saved `seed.json`, `canon-values.json`, and canon entries. If any seed or canon value changes, run `plan` again and confirm the new hash before requesting prose.
+The second command needs the person's own words in a terminal. The plan hash covers an input fingerprint of this project's saved `seed.json`, `canon-values.json`, and canon entries. A stable project identity is saved when seeding, so the project folder may be moved. Earlier projects without that identity file keep their existing path-derived identity. If any seed or canon value changes, run `plan` again and confirm the new hash before requesting prose.
 
 ## 3. Request, check, and lock each beat
 
@@ -89,7 +89,7 @@ A lock becomes stale when the locked beat text changes, its confirmed canon bloc
 1. Read `status` and note the earliest stale beat in each scene.
 2. If the seed or canon values changed, rerun `plan` and confirm the new plan hash at a terminal.
 3. Start at the earliest stale beat. If its plan, canon block, or an earlier beat changed, run `beat` again; then check the prose file and lock it at a terminal. If only that beat's saved prose changed, recheck it and lock it again.
-4. Repeat for later beats in scene order because each request depends on the preceding locked beat.
+4. Request, check, and lock each later beat again in scene order because each request depends on the preceding locked beat.
 5. Read status again. Assemble only when every beat is locked and current.
 
 The local MCP server reads and writes only beneath the existing folder registered as `SYNAPSE_NOVEL_ROOT`. Put the project and every seed, plan, and prose input it receives inside that folder. MCP has no tool for confirming values or plans, locking beats, or assembling a scene.

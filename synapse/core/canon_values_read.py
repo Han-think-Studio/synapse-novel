@@ -1,7 +1,7 @@
 """Read a values file against the files it was cut from, on the command line: list, closure, check, review.
 
 The read-only half of the ``canon values`` command (the other half, ``canon_values_cli``, is where a person
-confirms). Everything here is also available over the mini MCP; this is the same code reached from a terminal, so
+confirms). Everything here is also available over the novel MCP; this is the same code reached from a terminal, so
 that a person without an assistant gets the same answers.
 
 * ``list``: every value and its state.

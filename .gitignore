@@ -1,9 +1,20 @@
+# Python caches
 __pycache__/
 *.py[cod]
-*.egg-info/
-.venv/
 .pytest_cache/
+.mypy_cache/
 .ruff_cache/
+
+# Virtual environments
+.venv/
+venv/
+env/
+
+# Packaging output
+*.egg-info/
 build/
 dist/
+
+# Walkthrough and local working files
+.work/
 output/

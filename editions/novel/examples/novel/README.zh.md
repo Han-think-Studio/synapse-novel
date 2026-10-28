@@ -23,9 +23,9 @@ python editions/novel/synapse_novel.py novel seed --project .work/lighthouse --s
 - `work.opposition`
 - `work.timeframe`
 - `work.ending_direction`
-- `character.한도윤`、`character.한도윤.age`、`character.한도윤.sex`
-- `character.서이나`、`character.서이나.age`、`character.서이나.sex`
-- `character.오민규`、`character.오민규.age`、`character.오민규.sex`
+- `character.한도윤.description`、`character.한도윤.age`、`character.한도윤.sex`
+- `character.서이나.description`、`character.서이나.age`、`character.서이나.sex`
+- `character.오민규.description`、`character.오민규.age`、`character.오민규.sex`
 - `rule.prohibition.0001`
 - `rule.requirement.0001`
 
@@ -46,7 +46,7 @@ python editions/novel/synapse_novel.py novel plan --project .work/lighthouse --p
 python editions/novel/synapse_novel.py novel plan-confirm --project .work/lighthouse
 ~~~
 
-第二条命令需要创作者在终端输入自己的话。计划哈希包含由此项目保存的 `seed.json`、`canon-values.json` 和正典条目计算出的输入指纹。种子或值改变后，先重新运行 `plan` 并确认新的哈希，再请求文本。
+第二条命令需要创作者在终端输入自己的话。计划哈希包含由此项目保存的 `seed.json`、`canon-values.json` 和正典条目计算出的输入指纹。项目身份在种子时保存，因此移动项目文件夹后仍保持不变。没有身份记录的旧项目仍按原有路径方式读取。种子或值改变后，先重新运行 `plan` 并确认新的哈希，再请求文本。
 
 ## 3. 逐拍请求、检查并锁定
 
@@ -89,9 +89,9 @@ python editions/novel/synapse_novel.py novel assemble --project .work/lighthouse
 1. 读取 `status`，找出每个场景最早的 stale 节拍。
 2. 若种子或正典值改变，重新运行 `plan`，并在终端确认新的计划哈希。
 3. 从最早的 stale 节拍开始。计划、正典块或前一拍改变时重新运行 `beat`，然后检查文本文件并在终端锁定。如果只改了该拍已保存的文本，则重新检查并锁定。
-4. 每个请求都依赖前一拍的锁定记录，因此按场景顺序继续处理后续节拍。
+4. 每个请求都依赖前一拍的锁定记录，因此按场景顺序逐一重新请求、检查并锁定后续节拍。
 5. 再次读取 status。只有所有节拍都最新且已锁定时才合成。
 
 本地 MCP 服务器只读写现有 `SYNAPSE_NOVEL_ROOT` 文件夹之内。项目及传入的种子、计划和文本输入都放在该文件夹下。MCP 没有确认值或计划、锁定节拍、合成场景的工具。
 
-[版本指南](../../README.zh.md)、[한국어 예제](README.ko.md)、[中文示例](README.zh.md)。
+[版本指南](../../README.zh.md)、[한국어 예제](README.ko.md)。

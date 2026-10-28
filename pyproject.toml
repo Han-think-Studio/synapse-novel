@@ -5,7 +5,7 @@ build-backend = "setuptools.build_meta"
 [project]
 name = "synapse-novel"
 version = "0.1.0a4"
-description = "Deterministic idea-to-structure core, cut from Synapse OS"
+description = "Synapse Novel: a deterministic, model-free novel planning and writing flow"
 readme = "README.md"
 license = { file = "LICENSE" }
 requires-python = ">=3.12,<3.13"
@@ -14,16 +14,7 @@ dependencies = [
 ]
 
 [project.scripts]
-synapse-bundle-inspect = "synapse.core.bundle:main"
-synapse-bundle-intake = "synapse.core.intake:main"
-synapse-bundle-stage = "synapse.core.stage:main"
-synapse-project-reconstruct = "synapse.core.project_reconstruction:main"
-synapse-run = "synapse.core.run:main"
-synapse-runtime-check = "synapse.runtime.bootstrap:main"
-synapse-structure-dispatch = "synapse.core.structural_dispatch:main"
-synapse-structure-report = "synapse.core.structural_export_report:main"
-synapse-structure-report-inspect = "synapse.core.structural_export_report_inspection:main"
-synapse-structure-review = "synapse.core.structural_export_review:main"
+synapse-novel = "synapse.novel.edition_cli:main"
 
 [tool.setuptools.packages.find]
 include = ["synapse*"]

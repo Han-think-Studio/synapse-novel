@@ -149,11 +149,17 @@ def load_preset(preset_id: str) -> tuple[dict, dict, str]:
     return common, preset, digest(basis)
 
 
-def list_presets() -> tuple[dict, ...]:
-    """The fixed menu: every preset with its label, purpose, required inputs and tasks."""
+def list_presets(edition_id: str | None = None) -> tuple[dict, ...]:
+    """List all presets, or only those assigned to one registered edition."""
 
+    if edition_id is None:
+        selected_ids = preset_ids()
+    else:
+        from synapse.core.editions import edition
+
+        selected_ids = edition(edition_id).presets
     result = []
-    for preset_id in preset_ids():
+    for preset_id in selected_ids:
         _, preset, preset_digest = load_preset(preset_id)
         result.append(
             {
