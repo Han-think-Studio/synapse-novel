@@ -1,0 +1,12 @@
+{
+  "schema_version": 1,
+  "version": "1.0.0",
+  "status": "FIXED_PRESETS_MODEL_UNASSESSED",
+  "presets": [
+    "novel_philosophy_depth",
+    "novel_upload_review"
+  ],
+  "common": "common.json",
+  "execution": "Explicit selection only (2 presets, no default). Dispatch is operator-approved, one task per request.",
+  "source_of_guidance": "common.json plus exactly one presets/<id>.json; exported packets are derived and hash-bound."
+}

@@ -1,0 +1,27 @@
+{
+  "schema": "synapse-novel-structure-templates.v1",
+  "templates": [
+    {
+      "key": "four_part",
+      "label": "기승전결 4부",
+      "required_values": ["work.goal", "work.opposition", "work.timeframe", "work.ending_direction", "rule.prohibition"],
+      "parts": [
+        {"key": "opening", "label": "도입·세계·인물", "weight": 25, "definition": "인물과 세계를 보여 주고 이야기의 시작점을 세웁니다."},
+        {"key": "development", "label": "관계 심화·갈등 씨앗", "weight": 35, "definition": "관계와 목표를 깊게 하고 갈등의 원인을 드러냅니다."},
+        {"key": "turn", "label": "전환·충돌", "weight": 25, "definition": "선택과 충돌로 인물의 상태를 바꿉니다."},
+        {"key": "resolution", "label": "귀결·여운", "weight": 15, "definition": "결과를 정리하고 변화의 여운을 남깁니다."}
+      ]
+    },
+    {
+      "key": "three_act",
+      "label": "3막 구조",
+      "required_values": ["work.goal", "work.opposition", "work.timeframe", "work.ending_direction", "rule.prohibition"],
+      "parts": [
+        {"key": "act1", "label": "1막 설정", "weight": 25, "definition": "인물과 목표를 세우고 이야기를 움직이는 계기를 만듭니다."},
+        {"key": "act2_early", "label": "2막 대립 전반", "weight": 25, "definition": "목표를 향한 시도와 대립의 시작을 보여 줍니다."},
+        {"key": "act2_mid_late", "label": "2막 중간점·후반", "weight": 25, "definition": "중간점의 변화 뒤 대립을 심화하고 결단을 준비합니다."},
+        {"key": "act3", "label": "3막 해결", "weight": 25, "definition": "결정적 행동과 그 결과를 보여 줍니다."}
+      ]
+    }
+  ]
+}

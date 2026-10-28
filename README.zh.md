@@ -1,0 +1,43 @@
+[English](README.md) · [한국어](README.ko.md) · **中文**
+
+# Synapse Novel
+
+Synapse Novel 是面向公众的逐拍小说规划与检查版本。创作者与自己已有的 AI 一起写作。Synapse 为每一拍准备写作请求，对照已确认的正典和计划中的行动者检查返回文本，并记录项目状态。Synapse 不会调用模型。本版本不包含本地模型写作。
+
+## 从这里开始
+
+[连接指南](CONNECT.zh.md)介绍 Linux 和 Windows 的 MCP 设置。[版本指南](editions/novel/README.zh.md)介绍 CLI。需要 Python 3.12 和 PyYAML。
+
+小说 CLI 命令为 `seed`、`plan`、`plan-confirm`、`beat`、`check`、`lock`、`status` 和 `assemble`。运行 `python editions/novel/synapse_novel.py novel --help` 查看完整列表。
+
+## 五个小说工具
+
+本地 MCP 服务器首先列出以下工具：`synapse_novel_seed`、`synapse_novel_plan`、`synapse_novel_beat`、`synapse_novel_check`、`synapse_novel_status`。确认计划、确认正典值、锁定节拍和合成场景只能通过终端 CLI 完成。服务器和 CLI 都不会调用模型或网络。
+
+预设与正典工具见[连接指南](CONNECT.zh.md)。此版本包含两个预设定义：`novel_upload_review` 和 `novel_philosophy_depth`。
+
+## 阅读结果字段
+
+面向创作者的消息和错误文本使用韩语。JSON 键是稳定的契约字段，请按键读取对应值，不要翻译或改写键名。
+
+- `not_examined` 表示原文`未审阅`，会阻止锁定。先审阅所需来源，再重新检查该节拍。
+- `unchecked` 表示`未确认`的正典值，不会阻止锁定；终端锁定步骤会显示它并记录创作者自己的话。
+- 确定冲突、`facts_match` 为 false、缺少计划行动者或当前计划未确认都会阻止锁定。可能冲突和质量建议不会阻止锁定。质量检查始终只是建议，不是文学判断。
+
+计划记录包含由项目种子文件和正典值文件生成的输入指纹，计划哈希也覆盖该指纹。种子或值发生变化后，必须重新生成计划并在终端确认新的哈希。
+
+## 试用合成示例
+
+示例取自一个关于灯塔的合成故事，包含一个场景 `ch1s1` 和三拍。种子、计划和示例文本都是合成材料。完整的[示例流程](editions/novel/examples/novel/README.zh.md) ([English example](editions/novel/examples/novel/README.md))会确认每个种子提议键、依次请求、检查并锁定节拍 1–3，然后读取状态并合成场景。
+
+若已锁定节拍文本、已确认计划或其种子/值输入、正典块，或同一场景的前一拍发生变化，锁定会变为 stale。按顺序恢复：先读 `status`；若计划输入改变，修订并重新生成计划，再确认新哈希；从最早的 stale 节拍开始；计划、正典块或前一拍改变时重新请求，然后检查并锁定；按场景顺序继续处理后续节拍；再次读取 status；只有没有 stale 或未锁定节拍时才合成。合成不会覆盖已有文件，因此应指定新的输出路径。
+
+MCP 服务器只读写已注册的现有 `SYNAPSE_NOVEL_ROOT` 文件夹内的路径。种子、计划、节拍输入和项目都应放在该文件夹之下。
+
+## 项目参考资料
+
+此处保留了 Synapse 整体项目的背景参考资料：[播客节目条目](https://podcasts.apple.com/us/podcast/our-field-trip-to-google-i-o-a-sit-down-with/id1528594034?i=1000769070660)和 [Hard Fork 公开文字稿](https://bidclub.ai/zh/e/hard-fork-live-part-2-dylan-field-standing-out-i)。
+
+## 支持与许可证
+
+请通过[反馈表](FEEDBACK.md)提交已删除隐私信息的问题；处理顺序见[反馈分流指南](FEEDBACK_TRIAGE.md)。使用条件见[许可证](LICENSE)。本仓库的版本记录见[RELEASES.md](RELEASES.md)。
