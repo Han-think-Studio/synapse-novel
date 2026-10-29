@@ -83,17 +83,21 @@ Use the same OS-specific interpreter and script paths listed above. Restart the 
 
 ## Novel tools
 
-The server lists these five tools first. Their descriptions match the MCP tool descriptions.
+The server lists these seven novel tools first. Their descriptions match the MCP tool descriptions.
 
 | Tool | Description |
 |---|---|
 | `synapse_novel_seed` | Create a novel project from a seed file inside the registered folder and propose canon values. It does not confirm any value. |
+| `synapse_novel_import` | Import chapter `.txt`, `.md`, or `.docx` files under the registered folder into the project snapshot. The source folder is not changed. Chapter numbers follow natural filename order, not the digits in a name; `10.md` may be chapter 4. |
+| `synapse_novel_audit` | Check every imported scene against confirmed canon and report findings, possible conflicts, and unchecked values. It does not confirm values or approve the manuscript. |
 | `synapse_novel_plan` | Validate a novel scene plan and save it only when it has no problems. Plan confirmation is terminal-only. |
 | `synapse_novel_beat` | Request and record a writing request for the next eligible novel beat, including the confirmed canon block. Synapse calls no model; beat locking is terminal-only. |
 | `synapse_novel_check` | Check inline prose for one novel beat against confirmed canon and its planned actors, then record the check. It does not lock the beat. |
 | `synapse_novel_status` | Read the novel plan and each beat's requested, checked, locked, and stale status. |
 
 MCP has no tool for value confirmation, plan confirmation, beat locking, or assembly. Use the terminal CLI for those actions. Human-facing message and error text is Korean; JSON key names carry the result's meaning and stay unchanged.
+
+For an assistant-free start, fill the linked [seed card](editions/novel/examples/novel/seed.json) yourself and run `novel seed` before import or after import while canon values are still empty. `synapse_value_propose` is the assistant's MCP route for proposing values from claims; the person confirms every proposal at a terminal. In `status`, top-level `stale` describes beats and `manuscript.stale` lists changed or missing chapter files. `unchecked` values are not text conflicts; requirement values are never checked against prose, so `canon values check` can exit `1` with `complete: false` even when the text has no conflicts.
 
 ## Preset and project tools
 
@@ -119,7 +123,7 @@ This release includes two preset definitions: `novel_upload_review` and `novel_p
 | `synapse_canon_gate` | Ask which file decides each fact for a ZIP project or new idea, and whether its structure is settled. Ready is not approval. |
 | `synapse_canon_closure` | Read which confirmed canon values are settled and what each unsettled value is waiting on. Reads only; closed is not approval. |
 | `synapse_canon_claims` | Cut supplied files into claims by code and report how each was settled and what proposing a value from it would take. Pages contain at most 500 claims. |
-| `synapse_value_propose` | Propose canon values from claims into a values file inside the registered folder. Code builds every key. The person confirms at a terminal, never through MCP. |
+| `synapse_value_propose` | The assistant's MCP route to propose canon values from claims into a values file inside the registered folder. Code builds every key. The person confirms at a terminal, never through MCP. |
 | `synapse_canon_context` | Return the confirmed canon block for a writing prompt and a hash that binds a later check to it. Reads only. |
 | `synapse_check_output` | Check a draft against confirmed canon and return a receipt bound to the values, rules, and exact words. Synapse does not store the receipt. |
 | `synapse_review_receipt` | Check whether a receipt still describes the current values, rules, and words, and identify what changed. |

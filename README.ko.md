@@ -8,11 +8,15 @@ Synapse Novel은 소설을 비트 단위로 계획하고 검사하는 공개 작
 
 [연결 안내서](CONNECT.ko.md)에서 Linux와 Windows의 MCP 설정을 확인하세요. CLI는 [판본 안내서](editions/novel/README.ko.md)에 설명되어 있습니다. Python 3.12와 PyYAML이 필요합니다.
 
-소설 CLI 명령은 `import`, `audit`, `seed`, `plan`, `plan-confirm`, `beat`, `check`, `lock`, `status`, `assemble`입니다. `python editions/novel/synapse_novel.py novel --help`에서 전체 목록을 볼 수 있습니다.
+소설 CLI 명령은 열 개입니다: `import`, `audit`, `seed`, `plan`, `plan-confirm`, `beat`, `check`, `lock`, `status`, `assemble`. `python editions/novel/synapse_novel.py novel --help`에서 전체 목록을 볼 수 있습니다.
 
 ### 이미 쓴 원고
 
-장별 `.txt`와 `.md` 파일을 한 폴더에 바로 넣고 `novel import --project P --manuscript DIR`를 실행하세요. `synapse_value_propose`로 정본 값을 제안하고 내용을 살핀 뒤, 터미널에서 `canon values confirm`으로 확인하세요. 그런 다음 `novel audit --project P`를 실행합니다. 가져오기는 프로젝트 안에 스냅샷을 저장하며 원본 폴더는 바꾸지 않습니다. 다시 가져오려면 `--replace`를 사용하세요.
+장별 `.txt`, `.md`, `.docx` 파일을 한 폴더에 바로 넣고 `novel import --project P --manuscript DIR`를 실행하세요. 장마다 DOCX 파일을 둘 수도 있고, 단일 `.docx`의 Word `제목 1` (`heading 1`) 문단마다 장을 나눌 수도 있습니다. 가져오기가 붙이는 장 번호는 자연스러운 파일명 정렬 순서입니다. 파일명 속 숫자가 아니라 가져온 순서이므로 `10.md`가 4장이 될 수도 있습니다. 가져오기는 프로젝트 안에 스냅샷을 저장하며 원본 폴더는 바꾸지 않습니다. 다시 가져오려면 `--replace`를 사용하세요.
+
+AI 없이 시작하려면 [씨앗 카드 예시](editions/novel/examples/novel/seed.json)를 직접 채우고 `python editions/novel/synapse_novel.py novel seed --project P --seed-file F`를 실행하세요. 원고를 가져오기 전이나, 가져온 뒤 정본 값 파일이 비어 있을 때 실행할 수 있습니다. 먼저 씨앗을 만들면 가져오기가 그 프로젝트 파일을 보존하고, 먼저 원고를 가져오면 씨앗 명령이 빈 정본 값 파일을 채웁니다. 씨앗 결과에는 제안된 값마다 터미널에서 실행할 전체 확인 명령이 나옵니다. 각 명령을 살펴보고 직접 실행한 다음 `novel audit --project P`를 실행하세요.
+
+주장에서 AI가 정본 값을 제안하게 하려면 MCP 도구 `synapse_value_propose`를 사용합니다. 이 경로도 제안만 하며, 사람은 각 값을 살펴본 뒤 터미널에서 `canon values confirm`으로 확인해야 합니다.
 
 ## 소설 도구 일곱 개
 
@@ -25,10 +29,12 @@ Synapse Novel은 소설을 비트 단위로 계획하고 검사하는 공개 작
 사람에게 보여 주는 메시지와 오류 문구는 한국어입니다. JSON 키는 바꾸지 않는 계약 필드입니다. 키 이름을 번역하거나 바꾸지 말고 해당 값과 함께 읽으세요.
 
 - `not_examined`는 원문 `미검토`를 뜻합니다. 잠금을 막으며, 필요한 원문을 살펴본 뒤 비트를 다시 검사해야 합니다.
-- `unchecked`는 `미확인` 정본 값을 뜻합니다. 잠금을 막지는 않지만, 터미널 잠금 단계에서 보여 주고 사람이 직접 쓴 말을 기록합니다.
+- `unchecked`는 원고 문장과 대조하지 않는 정본 값입니다. `requirement` 값은 정책상 텍스트 검사 대상이 아니므로 `complete`를 계속 false로 두며, 글에 충돌이 없어도 `canon values check`가 종료 코드 `1`로 끝날 수 있습니다. 이는 깨끗한 글에서 충돌을 찾았다는 뜻이 아니라 검사가 미완료라는 뜻입니다. 미확인 값은 비트 잠금을 막지 않지만 터미널 잠금 단계에서 보여 주고 사람이 직접 쓴 말을 기록합니다.
 - 확정 충돌, 거짓인 `facts_match`, 계획된 인물 누락, 현재 계획 미확인은 잠금을 막습니다. 가능한 충돌과 품질 조언은 막지 않습니다. 품질은 문학적 판정이 아니라 조언입니다.
 
 계획 기록에는 프로젝트의 씨앗 파일과 정본 값 파일에서 만든 입력 지문이 들어가고, 계획 해시는 그 지문을 포함합니다. 씨앗이나 값이 달라지면 계획을 다시 만들고 새 해시를 터미널에서 확인해야 합니다.
+
+`status`의 최상위 `stale`은 비트 상태이고, `manuscript.stale`은 원본이 바뀌거나 사라진 가져온 장 파일 목록입니다.
 
 ## 합성 예제
 

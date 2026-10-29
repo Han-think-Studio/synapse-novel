@@ -10,7 +10,9 @@
 
 | 명령 | 기능 |
 |---|---|
-| `novel seed --project P --seed-file F` | 씨앗 기록을 만들고 정본 값을 제안합니다. 기존 씨앗 출력은 덮어쓰지 않습니다. |
+| `novel import --project P --manuscript DIR` | 장별 `.txt`, `.md`, `.docx` 파일을 snapshot으로 저장합니다. 원본 폴더는 바꾸지 않습니다. 장 번호는 자연스러운 파일명 정렬 순서이며 파일명 속 숫자와 다를 수 있습니다. `10.md`가 4장이 될 수도 있습니다. |
+| `novel audit --project P` | 가져온 snapshot을 확인된 정본과 대조합니다. 발견 결과는 종료 코드 `1`과 다음 단계로 반환됩니다. |
+| `novel seed --project P --seed-file F` | 씨앗 기록을 만들고 정본 값을 제안합니다. [씨앗 카드 예시](examples/novel/seed.json)를 직접 채우면 AI 없이 사용할 수 있습니다. 가져오기 전이나, 가져온 뒤 정본 값 파일이 비어 있을 때 실행하세요. |
 | `canon values confirm P/novel/canon-values.json KEY --files P/novel` | 터미널에서 한 번에 하나씩 사람이 자기 말로 제안 값을 확인합니다. |
 | `novel plan --project P --plan-file F` | 장면 계획을 검사합니다. 모든 비트에 `"confirmed": true`가 있고 행위자는 장면 인물이어야 합니다. |
 | `novel plan-confirm --project P` | 터미널에서 저장된 계획 해시를 확인합니다. |
@@ -20,9 +22,11 @@
 | `novel status --project P` | 계획과 비트별 요청·검사·잠금·stale 상태를 읽습니다. |
 | `novel assemble --project P --scene S --out O` | 모든 비트가 최신이고 잠겼을 때 장면을 순서대로 조립합니다. 출력 경로는 새 경로여야 합니다. |
 
-`python editions/novel/synapse_novel.py novel --help`에서 여덟 흐름 명령을 확인하세요. 종료 코드 `0`은 완료, `1`은 아직 해결할 항목이 있음, `2`는 실행할 수 없음을 뜻합니다. 사람이 읽는 메시지와 오류는 한국어입니다. JSON 필드 이름은 고정 계약 키이므로 바꾸지 않습니다.
+`python editions/novel/synapse_novel.py novel --help`에서 열 개의 `novel` 흐름 명령 `import`, `audit`, `seed`, `plan`, `plan-confirm`, `beat`, `check`, `lock`, `status`, `assemble`을 확인하세요. 별도 명령인 `canon values confirm`은 이 열 개에 포함되지 않습니다. 종료 코드 `0`은 완료, `1`은 아직 해결할 항목이 있음: 발견 결과에는 `next_step`을 넣고 `error`는 넣지 않으며, 잠금 거부에는 거부 이유를 표시합니다. `2`는 실행할 수 없음을 뜻합니다. 사람이 읽는 메시지와 오류는 한국어입니다. JSON 필드 이름은 고정 계약 키이므로 바꾸지 않습니다.
 
-`not_examined`는 잠금을 막는 원문 `미검토` 상태입니다. 필요한 원문을 살펴보고 비트를 다시 검사해야 합니다. `unchecked` 정본 값은 `미확인` 상태로 잠금을 막지는 않으며, 터미널에서 잠글 때 보여 주고 사람의 말과 함께 기록합니다. 확정 충돌, 계획 인물 누락, 정본 맥락 불일치, 현재 계획 미확인은 잠금을 막습니다. 가능한 충돌과 품질 조언은 막지 않습니다. 품질은 조언이며 승인 판정이 아닙니다.
+`not_examined`는 잠금을 막는 원문 `미검토` 상태입니다. 필요한 원문을 살펴보고 비트를 다시 검사해야 합니다. `unchecked`는 검사기가 원고 문장과 대조하지 않는 정본 값입니다. `requirement` 값은 텍스트와 절대 대조하지 않으므로 `complete`를 false로 유지합니다. 따라서 충돌이 없는 글이어도 `canon values check`가 종료 코드 `1`로 끝날 수 있으며, 이는 충돌이 아니라 검사가 미완료라는 뜻입니다. 미확인 값은 비트 잠금을 막지 않지만 터미널 잠금 때 보여 주고 사람이 직접 쓴 말을 기록합니다. 확정 충돌, 계획 인물 누락, 정본 맥락 불일치, 현재 계획 미확인은 잠금을 막습니다. 가능한 충돌과 품질 조언은 막지 않습니다. 품질은 조언이며 승인 판정이 아닙니다.
+
+`status`의 최상위 `stale`은 비트 상태이고, `manuscript.stale`은 원본이 바뀌거나 사라진 가져온 장 파일을 나타냅니다.
 
 계획 입력 지문은 저장된 씨앗, 정본 값 파일, 정본 항목을 포함합니다. 계획 해시는 이 지문을 포함합니다. 씨앗이나 값이 바뀌면 계획을 다시 만들고 확인해야 합니다.
 

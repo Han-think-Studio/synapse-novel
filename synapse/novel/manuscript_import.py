@@ -13,6 +13,7 @@ from pathlib import Path
 from typing import Any
 
 from synapse.core import canon_values
+from synapse.novel.manuscript_docx import DocxReadError, Paragraph, read_docx
 
 SNAPSHOT_SCHEMA = "synapse-novel-manuscript-snapshot.v1"
 MANIFEST_NAME = "manifest.json"
@@ -70,7 +71,13 @@ def _scene_ranges(text: str, chapter: int) -> list[dict[str, Any]]:
     return scenes
 
 
-def _chapter_files(folder: Path) -> tuple[list[Path], list[str]]:
+_CHAPTER_SUFFIXES = {".txt", ".md", ".docx"}
+_UNSUPPORTED_WORD_SUFFIXES = {".doc", ".docm", ".hwp", ".hwpx"}
+
+
+def _chapter_files(
+    folder: Path, *, reject_unsupported: bool = True
+) -> tuple[list[Path], list[str]]:
     """The chapter files directly in ``folder`` in natural order, and the names of the other files."""
 
     try:
@@ -80,6 +87,7 @@ def _chapter_files(folder: Path) -> tuple[list[Path], list[str]]:
 
     files: list[Path] = []
     skipped: list[str] = []
+    unsupported: list[Path] = []
     for path in entries:
         if _hidden(path):
             continue
@@ -89,27 +97,106 @@ def _chapter_files(folder: Path) -> tuple[list[Path], list[str]]:
             is_file = False
         if not is_file:
             continue
-        if path.suffix.lower() in {".txt", ".md"}:
+        suffix = path.suffix.lower()
+        if suffix in _CHAPTER_SUFFIXES:
             files.append(path)
+        elif suffix in _UNSUPPORTED_WORD_SUFFIXES:
+            unsupported.append(path)
         else:
             skipped.append(path.name)
 
     files.sort(key=lambda path: _natural_key(path.name))
+    unsupported.sort(key=lambda path: _natural_key(path.name))
+    if unsupported and reject_unsupported:
+        name = unsupported[0].name
+        raise ManuscriptImportError(
+            f"지원하지 않는 Word 형식입니다: {name}. Word에서 .docx로 저장하거나 .txt 또는 .md로 내보내세요."
+        )
+    if not reject_unsupported:
+        files.extend(unsupported)
+        files.sort(key=lambda path: _natural_key(path.name))
     skipped.sort(key=_natural_key)
     return files, skipped
 
 
-def _read_source_folder(manuscript: str | Path, *, max_text_bytes: int, max_scenes: int) -> tuple[Path, list[dict[str, Any]], list[str]]:
+def _snapshot_docx_paragraphs(paragraphs: list[Paragraph]) -> bytes:
+    if not paragraphs:
+        return b""
+    # The final newline preserves a final empty DOCX paragraph in splitlines().
+    return ("\n".join(paragraph.text for paragraph in paragraphs) + "\n").encode("utf-8")
+
+
+def _source_sha256(path: Path) -> str:
+    digest = hashlib.sha256()
+    with path.open("rb") as stream:
+        for block in iter(lambda: stream.read(1024 * 1024), b""):
+            digest.update(block)
+    return digest.hexdigest()
+
+
+def _read_source_folder(
+    manuscript: str | Path, *, max_text_bytes: int, max_scenes: int
+) -> tuple[Path, list[dict[str, Any]], list[str], list[dict[str, Any]]]:
     folder = Path(manuscript).expanduser().resolve()
     if not folder.is_dir():
         raise ManuscriptImportError(f"원고 폴더가 없습니다: {folder}")
     files, skipped = _chapter_files(folder)
     if not files:
-        raise ManuscriptImportError(f"가져올 .txt 또는 .md 장 파일이 없습니다: {folder}")
+        raise ManuscriptImportError(f"가져올 .txt, .md 또는 .docx 장 파일이 없습니다: {folder}")
 
     chapters: list[dict[str, Any]] = []
+    front_matter: list[dict[str, Any]] = []
     scene_count = 0
-    for chapter_number, path in enumerate(files, start=1):
+    source_rows: list[tuple[Path, list[tuple[str, bytes, str | None, int, str]]]] = []
+    for path in files:
+        if path.suffix.lower() == ".docx":
+            try:
+                paragraphs = read_docx(path)
+            except DocxReadError as exc:
+                raise ManuscriptImportError(str(exc)) from exc
+            try:
+                source_digest = _source_sha256(path)
+            except OSError as exc:
+                raise ManuscriptImportError(f"원고 파일을 읽을 수 없습니다: {path.name}") from exc
+
+            sections: list[tuple[str, bytes, str | None, int, str]] = []
+            headings = [index for index, paragraph in enumerate(paragraphs) if paragraph.heading1]
+            if len(files) == 1 and headings:
+                first_heading = headings[0]
+                front_matter.extend(
+                    {
+                        "file": path.name,
+                        "paragraph": index + 1,
+                        "text": paragraph.text,
+                    }
+                    for index, paragraph in enumerate(paragraphs[:first_heading])
+                    if paragraph.text.strip()
+                )
+                for section_index, heading_index in enumerate(headings):
+                    end = headings[section_index + 1] if section_index + 1 < len(headings) else len(paragraphs)
+                    body = paragraphs[heading_index + 1 : end]
+                    sections.append(
+                        (
+                            source_digest,
+                            _snapshot_docx_paragraphs(body),
+                            paragraphs[heading_index].text,
+                            heading_index + 1,
+                            "paragraph",
+                        )
+                    )
+            else:
+                sections.append(
+                    (
+                        source_digest,
+                        _snapshot_docx_paragraphs(paragraphs),
+                        None,
+                        0,
+                        "paragraph",
+                    )
+                )
+            source_rows.append((path, sections))
+            continue
+
         try:
             with path.open("rb") as stream:
                 data = stream.read(max_text_bytes + 1)
@@ -123,26 +210,40 @@ def _read_source_folder(manuscript: str | Path, *, max_text_bytes: int, max_scen
             text = data.decode("utf-8-sig")
         except UnicodeDecodeError as exc:
             raise ManuscriptImportError(f"원고 파일이 UTF-8이 아닙니다: {path.name}") from exc
+        source_rows.append((path, [(hashlib.sha256(data).hexdigest(), data, None, 0, "line")]))
 
-        scenes = _scene_ranges(text, chapter_number)
-        if not scenes:
-            raise ManuscriptImportError(f"원고 파일에 확인할 장면이 없습니다: {path.name}")
-        scene_count += len(scenes)
-        if scene_count > max_scenes:
-            raise ManuscriptImportError(
-                f"원고의 장면 수가 흐름의 제한({max_scenes})을 넘었습니다: {path.name}"
+    chapter_number = 0
+    for path, sections in source_rows:
+        for source_digest, snapshot_bytes, title, paragraph_offset, line_unit in sections:
+            if len(snapshot_bytes) > max_text_bytes:
+                raise ManuscriptImportError(
+                    f"원고 파일의 추출 텍스트가 흐름의 크기 제한({max_text_bytes} bytes)을 넘었습니다: {path.name}"
+                )
+            text = snapshot_bytes.decode("utf-8-sig")
+            chapter_number += 1
+            scenes = _scene_ranges(text, chapter_number)
+            if not scenes:
+                raise ManuscriptImportError(f"원고 파일에 확인할 장면이 없습니다: {path.name}")
+            scene_count += len(scenes)
+            if scene_count > max_scenes:
+                raise ManuscriptImportError(
+                    f"원고의 장면 수가 흐름의 제한({max_scenes})을 넘었습니다: {path.name}"
+                )
+            chapters.append(
+                {
+                    "file": path.name,
+                    "chapter": chapter_number,
+                    "sha256": source_digest,
+                    "snapshot_sha256": hashlib.sha256(snapshot_bytes).hexdigest(),
+                    "snapshot_file": f"chapters/{chapter_number:04d}.txt",
+                    "scenes": scenes,
+                    "line_unit": line_unit,
+                    "paragraph_offset": paragraph_offset,
+                    "_bytes": snapshot_bytes,
+                    **({"title": title} if title is not None else {}),
+                }
             )
-        chapters.append(
-            {
-                "file": path.name,
-                "chapter": chapter_number,
-                "sha256": hashlib.sha256(data).hexdigest(),
-                "snapshot_file": f"chapters/{chapter_number:04d}.txt",
-                "scenes": scenes,
-                "_bytes": data,
-            }
-        )
-    return folder, chapters, skipped
+    return folder, chapters, skipped, front_matter
 
 
 def _read_json(path: Path) -> dict[str, Any]:
@@ -219,7 +320,12 @@ def _manifest(project: Path) -> dict[str, Any] | None:
     return manifest
 
 
-def _prepare_snapshot(stage: Path, source_dir: Path, chapters: list[dict[str, Any]]) -> dict[str, Any]:
+def _prepare_snapshot(
+    stage: Path,
+    source_dir: Path,
+    chapters: list[dict[str, Any]],
+    front_matter: list[dict[str, Any]],
+) -> dict[str, Any]:
     manifest_chapters: list[dict[str, Any]] = []
     for item in chapters:
         snapshot_file = item["snapshot_file"]
@@ -229,8 +335,12 @@ def _prepare_snapshot(stage: Path, source_dir: Path, chapters: list[dict[str, An
                 "file": item["file"],
                 "chapter": item["chapter"],
                 "sha256": item["sha256"],
+                "snapshot_sha256": item["snapshot_sha256"],
                 "snapshot_file": snapshot_file,
                 "scenes": item["scenes"],
+                "line_unit": item["line_unit"],
+                "paragraph_offset": item["paragraph_offset"],
+                **({"title": item["title"]} if "title" in item else {}),
             }
         )
     manifest = {
@@ -238,6 +348,8 @@ def _prepare_snapshot(stage: Path, source_dir: Path, chapters: list[dict[str, An
         "source_dir": str(source_dir),
         "chapters": manifest_chapters,
     }
+    if front_matter:
+        manifest["front_matter"] = front_matter
     _write_new(stage / MANIFEST_NAME, (json.dumps(manifest, ensure_ascii=False, indent=2) + "\n").encode("utf-8"))
     return manifest
 
@@ -258,7 +370,7 @@ def import_manuscript(
     if not root.exists() and not root.parent.is_dir():
         raise ManuscriptImportError(f"프로젝트 상위 폴더가 없습니다: {root.parent}")
 
-    source_dir, chapters, skipped = _read_source_folder(
+    source_dir, chapters, skipped, front_matter = _read_source_folder(
         manuscript, max_text_bytes=MAX_TEXT_BYTES, max_scenes=MAX_SCENES
     )
     snapshot = root / "novel" / "manuscript"
@@ -288,7 +400,7 @@ def import_manuscript(
         root.mkdir(exist_ok=True)
         novel_folder.mkdir(exist_ok=True)
         stage.mkdir()
-        _prepare_snapshot(stage, source_dir, chapters)
+        _prepare_snapshot(stage, source_dir, chapters, front_matter)
 
         if not identity_path.exists():
             identity = {"schema": PROJECT_SCHEMA, "project_id": project_id}
@@ -334,9 +446,13 @@ def import_manuscript(
                 "chapter": item["chapter"],
                 "sha256": item["sha256"],
                 "scenes": item["scenes"],
+                "line_unit": item["line_unit"],
+                "paragraph_offset": item["paragraph_offset"],
+                **({"title": item["title"]} if "title" in item else {}),
             }
             for item in chapters
         ],
+        "front_matter": front_matter,
         "skipped": skipped,
         "message": "원고 snapshot을 가져왔습니다. 원본 폴더는 변경하지 않았습니다.",
     }
@@ -374,14 +490,14 @@ def manuscript_status(project: str | Path) -> dict[str, Any] | None:
     root = Path(project).expanduser().resolve()
     if not root.is_dir():
         raise ManuscriptImportError(f"프로젝트 폴더가 없습니다: {root}")
-    from synapse.novel.edition_flow import MAX_TEXT_BYTES
-
     manifest = _manifest(root)
     if manifest is None:
         return None
     source_dir = Path(manifest["source_dir"])
     stale: list[str] = []
+    stale_seen: set[str] = set()
     chapters: list[dict[str, Any]] = []
+    source_hashes: dict[str, str | None] = {}
     for item in manifest["chapters"]:
         if not isinstance(item, dict):
             raise ManuscriptImportError("원고 manifest의 장 항목 형식이 맞지 않습니다.")
@@ -400,20 +516,34 @@ def manuscript_status(project: str | Path) -> dict[str, Any] | None:
         ):
             raise ManuscriptImportError("원고 manifest의 장 항목 형식이 맞지 않습니다.")
         source_file = source_dir / name
-        try:
-            with source_file.open("rb") as stream:
-                current = stream.read(MAX_TEXT_BYTES + 1)
-            current_sha = hashlib.sha256(current).hexdigest() if len(current) <= MAX_TEXT_BYTES else None
-        except OSError:
-            current_sha = None
-        if current_sha != sha256:
+        if name not in source_hashes:
+            try:
+                source_hashes[name] = _source_sha256(source_file)
+            except OSError:
+                source_hashes[name] = None
+        current_sha = source_hashes[name]
+        if current_sha != sha256 and name not in stale_seen:
             stale.append(name)
-        chapters.append({"file": name, "chapter": chapter, "scenes": scenes})
+            stale_seen.add(name)
+        chapters.append(
+            {
+                "file": name,
+                "chapter": chapter,
+                "scenes": scenes,
+                "line_unit": item.get("line_unit", "line"),
+                "paragraph_offset": item.get("paragraph_offset", 0),
+                **({"title": item["title"]} if isinstance(item.get("title"), str) else {}),
+            }
+        )
     imported = {item["file"] for item in chapters}
     added: list[str] = []
     if source_dir.is_dir():
         try:
-            added = [path.name for path in _chapter_files(source_dir)[0] if path.name not in imported]
+            added = [
+                path.name
+                for path in _chapter_files(source_dir, reject_unsupported=False)[0]
+                if path.name not in imported
+            ]
         except ManuscriptImportError:
             added = []
     result = {"chapters": chapters, "stale": stale, "added": added, "last_audit": _last_audit(root)}

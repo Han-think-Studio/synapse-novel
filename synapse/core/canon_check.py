@@ -46,12 +46,36 @@ _ELAPSED_YEAR_DIGITS = {"영": 0, "공": 0, "일": 1, "이": 2, "삼": 3, "사":
 _ELAPSED_YEAR_SMALL_UNITS = {"십": 10, "백": 100, "천": 1_000}
 _ELAPSED_YEAR_LARGE_UNITS = {"만": 10_000, "억": 100_000_000}
 _AGE_NUMBER = r"(?:\d+|(?:열|스물|스무|서른|마흔|쉰|예순|일흔|여든|아흔)(?:하나|다섯|여섯|일곱|여덟|아홉|한|두|둘|세|셋|네|넷)?|하나|다섯|여섯|일곱|여덟|아홉|한|두|둘|세|셋|네|넷)"
+_AGE_TENS_NUMBER = r"(?:열|스물|스무|서른|마흔|쉰|예순|일흔|여든|아흔)(?:하나|다섯|여섯|일곱|여덟|아홉|한|두|둘|세|셋|네|넷)?"
 _AGE_VALUE = re.compile(rf"\s*(?:만\s*)?({_AGE_NUMBER})\s*(?:세|살)\s*")
 _LABELED_AGE_VALUE = re.compile(
     rf"\s*나이(?:는|가|\s*[:：=]|\s+)\s*(?:만\s*)?({_AGE_NUMBER})\s*(?:세|살)"
     r"(?:입니다|이다|다)?\s*\.?\s*"
 )
 _AGE_MENTION = re.compile(rf"(?<![\d가-힣])(?:만\s*)?({_AGE_NUMBER})\s*(?:세(?!기|대)|살)")
+_BARE_AGE_MENTION = re.compile(
+    rf"(?<![\d가-힣])({_AGE_TENS_NUMBER})"
+    # Narrative present (`서른둘이다`) only: in dialogue (`내가 여든둘이야`) the speaker is seldom a named character.
+    r"(?=(?:이었|였|인|의|이(?:다|고|며|지만)|이\s*되(?:면|기\s*전에)))"
+)
+# What follows `N살의` / `N인` when it is the predicate of the clause (`30세의 청년이었다`): the age then describes the
+# clause's subject, not a name after it.
+_AGE_PREDICATE_PHRASE = re.compile(
+    r"\s*(?:[가-힣]+\s+){0,2}[가-힣]+?"
+    r"(?:이었|였)(?:다|고|으며|는데|지만|던)|"
+    r"\s*(?:[가-힣]+\s+){0,2}[가-힣]+?(?:이다|이고|이며|이지만)"
+)
+_AGE_SUBJECT_TAIL = re.compile(
+    r"\s*(?:씨|님|선생|박사)?\s*(?:은|는|이|가)\s*"
+    r"(?:(?:올해(?:로)?|현재|지금|오늘|요즘|그\s*무렵|그때|그\s*시절|당시)\s*)?$"
+)
+_AGE_SUBJECT_WORD = re.compile(
+    r"(?<![가-힣])(?P<name>[가-힣]{2,4})(?:\s*(?:씨|님|선생|박사))?"
+    r"(?P<particle>은|는|이|가)\s*"
+    r"(?:(?:올해(?:로)?|현재|지금|오늘|요즘|그\s*무렵|그때|그\s*시절|당시)\s*)?$"
+)
+_AGE_NONPERSON_SUBJECTS = {"나이", "연령"}
+_AGE_BIRTHDAY_AFTER = re.compile(r"\s*생일")
 _AGE_MILESTONE_CUE = re.compile(
     r"(?<![가-힣])(?:환갑|회갑|고희|[일이삼사오육칠팔구]순)"
     r"(?=(?:은|는|이|가|을|를|의|에|[\s,.;!?]|$))"
@@ -70,6 +94,7 @@ _AGE_PAST_ANCHOR = re.compile(
     rf"{_AGE_DURATION_NUMBER}\s*년\s*전"
     r"|당시|그때|그\s*시절|처음|그\s*뒤로.{0,80}(?:흘렀|지났|지나갔)"
 )
+_AGE_PAST_EVENT_BEFORE = re.compile(r"[가-힣]{1,10}(?:한|했던|하던)\s*(?:건|것|일|때)\s*$")
 _AGE_YEARS_AGO = re.compile(rf"({_AGE_DURATION_NUMBER})\s*년\s*전")
 _AGE_CURRENT_ANCHOR = re.compile(r"(?:올해(?:로)?|현재|지금|오늘|요즘)\s*$")
 _CHARACTER_ATTRIBUTE = re.compile(r"^character\.(.+)\.([^.]+)$")
@@ -229,6 +254,34 @@ def _find_approximate_prohibition(text: str, phrase: str) -> tuple[str, ...]:
             continue
         evidence.append(text[source_start:source_end])
         last_end = end
+    return tuple(dict.fromkeys(evidence))
+
+
+def _find_linking_siot_prohibition(text: str, phrase: str) -> tuple[str, ...]:
+    """Find a prohibited noun whose final open syllable takes a linking ㅅ."""
+
+    if not phrase:
+        return ()
+    last = phrase[-1]
+    syllable_index = ord(last) - 0xAC00
+    if not (0 <= syllable_index < 11_172) or syllable_index % 28:
+        return ()
+
+    variant = phrase[:-1] + chr(ord(last) + 19)
+    target, _ = _normalize_with_spans(variant)
+    haystack, spans = _normalize_with_spans(text)
+    if not target or not haystack:
+        return ()
+
+    evidence: list[str] = []
+    for match in re.finditer(re.escape(target), haystack):
+        start = spans[match.start()][0]
+        end = spans[match.end() - 1][1]
+        if end >= len(text) or not ("가" <= text[end] <= "힣"):
+            continue
+        if start and (text[start - 1].isalnum() or text[start - 1] == "_"):
+            continue
+        evidence.append(text[start : end + 1])
     return tuple(dict.fromkeys(evidence))
 
 
@@ -430,6 +483,13 @@ def _canonical_age(text: str) -> int | None:
     return _age_number(match.group(1)) if match else None
 
 
+def _age_mentions(text: str) -> list[re.Match[str]]:
+    return sorted(
+        (*_AGE_MENTION.finditer(text), *_BARE_AGE_MENTION.finditer(text)),
+        key=lambda mention: (mention.start(), mention.end()),
+    )
+
+
 def _nearest_mention(
     mention: re.Match[str], named: list[tuple[int, int, str]]
 ) -> tuple[int, int, str] | None:
@@ -446,6 +506,112 @@ def _nearest_mention(
         ),
         default=None,
     )
+
+
+def _age_owner_mentions(text: str, names: Iterable[str]) -> list[tuple[int, int, str]]:
+    """Keep embedded aliases as review candidates; exact ownership is resolved separately."""
+
+    return _mentions_of(text, names, include_embedded=True)
+
+
+def _postposed_age_owner(
+    mention: re.Match[str],
+    sentence: str,
+    sentence_start: int,
+    sentence_names: list[tuple[int, int, str]],
+) -> tuple[str | None, bool, bool]:
+    """Resolve ``N살의 이름`` and ``N인 이름`` before nearby earlier mentions."""
+
+    local_end = mention.end() - sentence_start
+    suffix = re.match(r"\s*(?P<marker>의|인)\s*", sentence[local_end:])
+    if suffix is None:
+        return None, False, False
+
+    name_start = mention.end() + suffix.end()
+    candidates: list[tuple[int, int, str]] = []
+    for start, end, name in sentence_names:
+        if start < name_start:
+            continue
+        gap = sentence[name_start - sentence_start : start - sentence_start]
+        if not gap or re.fullmatch(r"[가-힣]{1,5}\s+", gap):
+            candidates.append((start, end, name))
+    if not candidates:
+        clause = re.split(r"[,.!?;\n]", sentence[name_start - sentence_start :], maxsplit=1)[0]
+        if _AGE_PREDICATE_PHRASE.fullmatch(clause.rstrip()):
+            return None, False, False  # `30세의 청년이었다`: the clause's subject owns the age
+        return None, False, True
+
+    _start, _end, owner = min(candidates, key=lambda item: item[0])
+    return owner, False, True
+
+
+def _postposed_subject_age_owner(
+    mention: re.Match[str],
+    sentence: str,
+    sentence_start: int,
+    sentence_names: list[tuple[int, int, str]],
+    known_names: Iterable[str],
+) -> tuple[str | None, bool, bool]:
+    """Resolve a name used as the subject immediately after an age phrase."""
+
+    local_end = mention.end() - sentence_start
+    after = sentence[local_end:]
+    for start, end, owner in sentence_names:
+        if start < mention.end():
+            continue
+        gap = sentence[local_end : start - sentence_start]
+        if not re.fullmatch(r"\s*(?:에\s*)?", gap):
+            continue
+        particle = re.match(r"(?:은|는|이|가)(?=\s|[,.!?]|$)", sentence[end - sentence_start :])
+        if particle:
+            return owner, False, True
+
+    unregistered_subject = re.match(
+        r"\s*(?P<name>[가-힣]{2,4})(?:\s*(?:씨|님|선생|박사))?(?:은|는|이|가)(?=\s|[,.!?]|$)",
+        after,
+    )
+    if unregistered_subject and unregistered_subject.group("name") not in _AGE_NONPERSON_SUBJECTS:
+        surface = unregistered_subject.group("name")
+        if any(form in surface for name in known_names for form in _name_forms(name)):
+            return None, False, False
+        return None, False, True
+    return None, False, False
+
+
+def _subject_age_owner(
+    mention: re.Match[str],
+    sentence: str,
+    sentence_start: int,
+    sentence_names: list[tuple[int, int, str]],
+    known_names: Iterable[str],
+) -> tuple[str | None, bool, bool]:
+    """Prefer the character who is the age clause's subject or topic."""
+
+    local_start = mention.start() - sentence_start
+    before = sentence[:local_start]
+    subjects = [
+        (start, end, name)
+        for start, end, name in sentence_names
+        if end <= mention.start()
+        and _AGE_SUBJECT_TAIL.fullmatch(sentence[end - sentence_start : local_start])
+    ]
+    if subjects:
+        _start, _end, owner = max(subjects, key=lambda item: item[0])
+        return owner, False, True
+
+    unregistered_subject = _AGE_SUBJECT_WORD.search(before)
+    if unregistered_subject and unregistered_subject.group("name") not in _AGE_NONPERSON_SUBJECTS:
+        surface = unregistered_subject.group("name")
+        if any(form in surface for name in known_names for form in _name_forms(name)):
+            return None, False, False
+        prior_genitive = any(
+            end <= sentence_start + unregistered_subject.start("name")
+            and re.search(r"의(?:\s+[^\n,.;!?]*)?\s*$", sentence[end - sentence_start : unregistered_subject.start("name")])
+            for _start, end, _name in sentence_names
+        )
+        if unregistered_subject.group("particle") in {"은", "는"} or prior_genitive:
+            return None, False, True
+    return None, False, False
 
 
 def _age_mention_owner(
@@ -484,9 +650,29 @@ def _age_mention_owner(
         if len(explicitly_named_after_marker) != 1:
             return None, True
 
+    owner, uncertain, explicit = _postposed_age_owner(
+        mention, sentence, sentence_start, sentence_names
+    )
+    if explicit:
+        return owner, uncertain
+
+    owner, uncertain, explicit = _subject_age_owner(
+        mention, sentence, sentence_start, sentence_names, ages
+    )
+    if explicit:
+        return owner, uncertain
+
+    owner, uncertain, explicit = _postposed_subject_age_owner(
+        mention, sentence, sentence_start, sentence_names, ages
+    )
+    if explicit:
+        return owner, uncertain
+
     closest = _nearest_mention(mention, all_named)
     owner = closest[2] if closest else None
     uncertain = closest is not None and closest not in named
+    if closest is not None and owner is not None:
+        uncertain |= closest[1] - closest[0] != len(owner)
     if owner is None:
         candidates = []
         for pronoun in _PRONOUN.finditer(sentence):
@@ -512,19 +698,53 @@ def _parsed_age_owners(text: str, values: tuple[CanonValue, ...]) -> set[str]:
         name for value in values if (name := _character_name(value.key)) is not None
     } | set(ages)
     named = set(_mentions_of(text, everyone))
-    all_named = _mentions_of(text, everyone, include_embedded=True)
+    all_named = _age_owner_mentions(text, everyone)
     sexes = _character_sexes(values)
     spans = _sentence_spans(text)
     starts = [start for start, _end in spans]
     owners: set[str] = set()
-    for mention in _AGE_MENTION.finditer(text):
+    for mention in _age_mentions(text):
         if _age_number(mention.group(1)) is None:
             continue
         sentence_index = bisect_right(starts, mention.start()) - 1
         sentence_start, sentence_end = spans[sentence_index]
         sentence = text[sentence_start:sentence_end]
+        if _AGE_BIRTHDAY_AFTER.match(text[mention.end() : sentence_end]):
+            continue
         owner, _uncertain = _age_mention_owner(
             mention, sentence, sentence_start, ages, named, all_named, sexes
+        )
+        if owner in ages:
+            owners.add(owner)
+    return owners
+
+
+def _birthday_age_owners(text: str, values: tuple[CanonValue, ...]) -> set[str]:
+    ages: dict[str, tuple[int, CanonValue]] = {}
+    for value in values:
+        key_match = _AGE_KEY.fullmatch(value.key)
+        number = _canonical_age(value.text)
+        if key_match and number is not None:
+            ages.setdefault(key_match.group(1), (number, value))
+    if not ages:
+        return set()
+
+    everyone = {
+        name for value in values if (name := _character_name(value.key)) is not None
+    } | set(ages)
+    named = set(_mentions_of(text, everyone))
+    all_named = _age_owner_mentions(text, everyone)
+    sexes = _character_sexes(values)
+    spans = _sentence_spans(text)
+    starts = [start for start, _end in spans]
+    owners: set[str] = set()
+    for mention in _age_mentions(text):
+        sentence_index = bisect_right(starts, mention.start()) - 1
+        sentence_start, sentence_end = spans[sentence_index]
+        if not _AGE_BIRTHDAY_AFTER.match(text[mention.end() : sentence_end]):
+            continue
+        owner, _uncertain = _age_mention_owner(
+            mention, text[sentence_start:sentence_end], sentence_start, ages, named, all_named, sexes
         )
         if owner in ages:
             owners.add(owner)
@@ -577,6 +797,7 @@ def _is_past_age(
 
     sentence = text[sentence_start:sentence_end]
     anchored = bool(_AGE_PAST_ANCHOR.search(sentence))
+    anchored |= _AGE_PAST_EVENT_BEFORE.search(preceding) is not None
     if not anchored and re.match(r"\s*의", after):
         anchored = bool(_AGE_PAST_ANCHOR.search(_paragraph_at(text, mention.start())))
     if not anchored:
@@ -597,18 +818,20 @@ def _check_age(text: str, values: tuple[CanonValue, ...], conflicts: list[Confli
         return
     everyone = {name for value in values if (name := _character_name(value.key)) is not None} | set(ages)
     named = set(_mentions_of(text, everyone))
-    all_named = _mentions_of(text, everyone, include_embedded=True)
+    all_named = _age_owner_mentions(text, everyone)
     sexes = _character_sexes(values)
     spans = _sentence_spans(text)
     starts = [a for a, _ in spans]
     quoted = tuple(_DIALOGUE.finditer(text))
-    for mention in _AGE_MENTION.finditer(text):
+    for mention in _age_mentions(text):
         number = _age_number(mention.group(1))
         if number is None:
             continue
         sentence_index = bisect_right(starts, mention.start()) - 1
         sentence_start, sentence_end = spans[sentence_index]
         sentence = text[sentence_start:sentence_end]
+        if _AGE_BIRTHDAY_AFTER.match(text[mention.end() : sentence_end]):
+            continue
         owner, uncertain = _age_mention_owner(
             mention, sentence, sentence_start, ages, named, all_named, sexes
         )
@@ -642,6 +865,7 @@ def _check_age(text: str, values: tuple[CanonValue, ...], conflicts: list[Confli
         )
         uncertain |= bool(
             other_subject
+            or re.search(r"그\s*무렵", earlier)
             or any(q.start() <= mention.start() < q.end() for q in quoted)
             or re.search(r"아니|않|믿었|생각했|여겼|알았|물었|\?", after)
             or re.search(r"믿|생각|여겼|알았", earlier)
@@ -778,6 +1002,16 @@ def _check_contrasts(
     spans = _sentence_spans(text)
     starts = [start for start, _ in spans]
     names = tuple(dict.fromkeys(name for entries in by_attribute.values() for name, _ in entries))
+    age_values = by_attribute.get("age", ())
+    ages = {
+        name: (number, value)
+        for name, value in age_values
+        if (number := _canonical_age(value.text)) is not None
+    }
+    age_named = set(_mentions_of(text, ages))
+    all_age_named = _age_owner_mentions(text, ages)
+    sexes = _character_sexes(values)
+    age_mentions = _age_mentions(text)
     for attribute, entries in by_attribute.items():
         for left_index, (left_character, left_value) in enumerate(entries):
             for right_character, right_value in entries[left_index + 1 :]:
@@ -795,7 +1029,9 @@ def _check_contrasts(
                 for clause_start, _clause_end, clause in _clauses(text):
                     if _DIFFERENCE.search(clause):
                         continue
-                    sentence = _sentence_at(text, spans, starts, clause_start)
+                    sentence_index = bisect_right(starts, clause_start) - 1
+                    sentence_start, sentence_end = spans[sentence_index]
+                    sentence = text[sentence_start:sentence_end]
                     exact_names = set(_mentions_of(sentence, names))
                     all_names = _mentions_of(sentence, names, include_embedded=True)
                     pair_uncertain = any(
@@ -808,9 +1044,32 @@ def _check_contrasts(
                             continue
                         pair_uncertain = True
                     age_equal = re.search(r"동갑", clause)
+                    noncurrent_pair_age = False
+                    if attribute == "age" and ages:
+                        for mention in age_mentions:
+                            if not sentence_start <= mention.start() < sentence_end:
+                                continue
+                            if not (
+                                _AGE_BIRTHDAY_AFTER.match(text[mention.end() : sentence_end])
+                                or _is_past_age(text, mention, sentence_start, sentence_end)
+                            ):
+                                continue
+                            owner, _uncertain = _age_mention_owner(
+                                mention,
+                                sentence,
+                                sentence_start,
+                                ages,
+                                age_named,
+                                all_age_named,
+                                sexes,
+                            )
+                            if owner in (left_character, right_character):
+                                noncurrent_pair_age = True
+                                break
                     if (
                         attribute == "age"
                         and age_equal
+                        and not noncurrent_pair_age
                         and not _similarity_is_negated(clause, age_equal)
                     ):
                         for value in (left_value, right_value):
@@ -818,6 +1077,8 @@ def _check_contrasts(
                                 "R2", value.key, value.claim_id, "동갑",
                                 f"{left_character}와 {right_character}의 확정 나이가 다릅니다.",
                             ))
+                    if attribute == "age" and noncurrent_pair_age:
+                        continue
                     attribute_matches = [
                         match
                         for term in attribute_terms
@@ -873,7 +1134,23 @@ def _check_quoted_prohibitions(
             continue
         for quoted in _QUOTED_PROHIBITION.finditer(value.text):
             phrase = next((part for part in quoted.groups() if part), "")
-            matches = _find_approximate_prohibition(text, phrase)
+            linked_siot = _find_linking_siot_prohibition(text, phrase)
+            matches = tuple(
+                evidence
+                for evidence in _find_approximate_prohibition(text, phrase)
+                if not any(evidence == linked or evidence in linked for linked in linked_siot)
+            )
+            for evidence in linked_siot:
+                _add_conflict(
+                    possible,
+                    Conflict(
+                        "R3",
+                        value.key,
+                        value.claim_id,
+                        evidence,
+                        "금지 낱말이 ㅅ을 더한 합성어에 들어 있어 사람의 검토가 필요합니다.",
+                    ),
+                )
             if not matches and len(phrase) >= 10:
                 # A long shared prefix with a different ending is suggestive only.
                 normalized_phrase, _ = _normalize_with_spans(phrase)
@@ -1126,6 +1403,7 @@ def automatically_checkable_values(
     }
     unread_age_names = _unread_age_cue_names(text, age_names)
     parsed_age_names = _parsed_age_owners(text, confirmed)
+    birthday_age_names = _birthday_age_owners(text, confirmed)
 
     for value in confirmed:
         key_match = _AGE_KEY.fullmatch(value.key)
@@ -1138,8 +1416,11 @@ def automatically_checkable_values(
                 or key_match.group(1) in parsed_age_names
             )
             and (
-                _mentions_of(text, (key_match.group(1),))
-                or key_match.group(1) in parsed_age_names
+                key_match.group(1) in parsed_age_names
+                or (
+                    key_match.group(1) not in birthday_age_names
+                    and _mentions_of(text, (key_match.group(1),))
+                )
             )
         ):
             checkable.add((value.key, value.claim_id))

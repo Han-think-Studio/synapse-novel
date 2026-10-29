@@ -996,7 +996,7 @@ TOOLS: dict[str, dict[str, Any]] = {
         "readOnly": True,
     },
     "synapse_novel_import": {
-        "description": "Import a manuscript whose chapter .txt and .md files are inside the registered folder into the project snapshot. It does not confirm canon values or lock anything; the source folder is never changed.",
+        "description": "Import chapter .txt, .md, or .docx files inside the registered folder into the project snapshot. A single .docx chapter file can be split at Word heading 1 paragraphs. It does not confirm canon values or lock anything; the source folder is never changed.",
         "inputSchema": _schema(
             {
                 "project": _STR,

@@ -7,6 +7,8 @@ import hashlib
 import json
 import os
 import re
+import shlex
+import subprocess
 import sys
 import uuid
 from collections.abc import Callable, Mapping, Sequence
@@ -382,33 +384,89 @@ def seed_project(project: str | Path, seed_file: str | Path) -> dict[str, Any]:
     root = _root(project)
     folder = _novel(root)
     identity_path = _novel(root) / "project.json"
-    targets = (_seed_path(root), _seed_text_path(root), _values_path(root), identity_path)
-    if any(path.exists() for path in targets):
+    values_path = _values_path(root)
+    seed_targets = (_seed_path(root), _seed_text_path(root))
+    if any(path.exists() for path in seed_targets):
         raise FlowError(canon_values_cli.CANNOT_RUN, "씨앗 자료가 이미 있어 덮어쓰지 않았습니다.")
+
+    existing_store = None
+    identity_exists = identity_path.exists()
+    values_exist = values_path.exists()
+    if identity_exists or values_exist:
+        manifest_path = folder / "manuscript" / "manifest.json"
+        if not (identity_exists and values_exist and manifest_path.is_file()):
+            raise FlowError(
+                canon_values_cli.CANNOT_RUN,
+                "기존 프로젝트에 씨앗을 추가하려면 원고 가져오기가 끝났고 정본 값이 비어 있어야 합니다.",
+            )
+        identity = _read_json(identity_path)
+        project_id = identity.get("project_id")
+        if (
+            identity.get("schema") != PROJECT_SCHEMA
+            or not isinstance(project_id, str)
+            or not project_id.strip()
+        ):
+            raise FlowError(canon_values_cli.CANNOT_RUN, "프로젝트 정체 기록의 형식이 맞지 않습니다.")
+        try:
+            existing_store = canon_values.load(values_path, (), only_files=())
+        except (OSError, TypeError, ValueError) as exc:
+            raise FlowError(canon_values_cli.CANNOT_RUN, f"정본 값 파일을 읽을 수 없습니다: {exc}") from exc
+        if existing_store.project_id != project_id:
+            raise FlowError(canon_values_cli.CANNOT_RUN, "프로젝트 정체 기록과 정본 값의 project_id가 다릅니다.")
+        if existing_store.entries or existing_store.history:
+            raise FlowError(canon_values_cli.CANNOT_RUN, "정본 값이 이미 있어 씨앗을 추가하지 않았습니다.")
+    else:
+        project_id = "novel-" + uuid.uuid4().hex
+
     payload = _read_json(Path(seed_file).expanduser().resolve())
-    project_id = "novel-" + uuid.uuid4().hex
     try:
         seed = scratch_seed_from_payload(payload)
-        store, _claims, source = seed_values(seed, project_id)
+        store, _claims, source = seed_values(
+            seed,
+            project_id,
+            archive_sha256=existing_store.archive_sha256 if existing_store is not None else None,
+        )
     except (TypeError, ValueError) as exc:
         raise FlowError(canon_values_cli.CANNOT_RUN, f"씨앗 내용을 확인할 수 없습니다: {exc}") from exc
     folder.mkdir(parents=True, exist_ok=True)
     created: list[Path] = []
     try:
-        for path, data in (
-            (identity_path, _json_bytes({"schema": PROJECT_SCHEMA, "project_id": project_id})),
+        records = (
             (_seed_path(root), _json_bytes({"schema": SEED_SCHEMA, "seed": payload})),
             (_seed_text_path(root), source.encode("utf-8")),
-        ):
+        )
+        if existing_store is None:
+            records = (
+                (identity_path, _json_bytes({"schema": PROJECT_SCHEMA, "project_id": project_id})),
+                *records,
+            )
+        for path, data in records:
             _write_bytes(path, data, overwrite=False)
             created.append(path)
-        canon_values.save(store, _values_path(root))
-        created.append(_values_path(root))
+        canon_values.save(store, values_path)
+        if existing_store is None:
+            created.append(values_path)
     except Exception:
         for path in reversed(created):
             path.unlink(missing_ok=True)
         raise
     proposed = [entry.key for entry in store.entries]
+    confirm_commands = []
+    for key in proposed:
+        command = [
+            "python",
+            "editions/novel/synapse_novel.py",
+            "canon",
+            "values",
+            "confirm",
+            str(values_path),
+            key,
+            "--files",
+            str(folder),
+        ]
+        confirm_commands.append(
+            subprocess.list2cmdline(command) if os.name == "nt" else shlex.join(command)
+        )
     missing_character_values = []
     for person in seed.characters:
         missing = [
@@ -424,8 +482,9 @@ def seed_project(project: str | Path, seed_file: str | Path) -> dict[str, Any]:
         "scratch_seed_file": str(_seed_text_path(root)),
         "values_file": str(_values_path(root)),
         "proposed": proposed,
+        "confirm_commands": confirm_commands,
         "missing_character_values": missing_character_values,
-        "message": "정본 값은 제안 상태입니다. 기존 canon values confirm 터미널 명령으로 하나씩 확인해 주세요.",
+        "message": "정본 값은 제안 상태입니다. confirm_commands에 표시된 전체 터미널 명령으로 하나씩 확인해 주세요.",
     }
 
 
@@ -995,11 +1054,28 @@ def _refusal_message(result: Mapping[str, Any]) -> str:
         first = next((item for item in problems if isinstance(item, str) and item.strip()), None)
         if first:
             return first
+    if isinstance(result.get("conflicts"), list) and result["conflicts"]:
+        return "원고에서 정본 충돌을 찾았습니다. 위치를 확인하고 원고 또는 정본 값을 고친 뒤 audit을 다시 실행하세요."
     if result.get("lockable") is False:
-        return "검사 결과 이 박자는 잠글 수 없습니다."
+        return "검사 결과를 확인하고 필요한 내용을 고친 뒤 이 박자를 다시 검사하세요."
     if isinstance(result.get("stale"), list) and result["stale"]:
         return "오래된 잠금 박자를 확인하고 다시 잠가야 합니다."
     return "요청을 완료하지 못했습니다."
+
+
+def _has_actionable_exit_one(command: str, result: Mapping[str, Any]) -> bool:
+    """Whether an exit-1 result reports a finding or stale state with a next step."""
+
+    if command == "audit":
+        return bool(result.get("conflicts")) or bool(result.get("next_step"))
+    if command == "status":
+        return bool(result.get("next_step")) or bool(result.get("stale"))
+    if command == "plan":
+        problems = result.get("problems")
+        return isinstance(problems, list) and bool(problems)
+    if command == "check":
+        return result.get("lockable") is False
+    return False
 
 
 def _now() -> str:
@@ -1062,7 +1138,13 @@ def main(
         result.setdefault("error", str(exc))
     except (OSError, RunError, ValueError, TypeError) as exc:
         code, result = canon_values_cli.CANNOT_RUN, {"error": str(exc)}
-    if code != canon_values_cli.DONE:
+    if code == canon_values_cli.NOT_DONE:
+        if _has_actionable_exit_one(args.command, result):
+            error_message = result.pop("error", None)
+            result.setdefault("next_step", error_message or _refusal_message(result))
+        else:
+            result.setdefault("error", _refusal_message(result))
+    elif code == canon_values_cli.CANNOT_RUN:
         result.setdefault("error", _refusal_message(result))
     print(json.dumps(result, ensure_ascii=False, indent=2, sort_keys=True), flush=True)
     return code

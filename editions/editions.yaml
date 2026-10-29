@@ -13,6 +13,7 @@ editions:
   - synapse/novel/edition_cli.py
   - synapse/novel/edition_flow.py
   - synapse/novel/manuscript_audit.py
+  - synapse/novel/manuscript_docx.py
   - synapse/novel/manuscript_import.py
   - synapse/novel/beat_prompt.py
   - synapse/novel/beats.py

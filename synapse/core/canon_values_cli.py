@@ -89,7 +89,7 @@ def _show(
         out(f"  지금 확정된 말: {entry.words}  ({entry.confirmed_at})")
     if entry.terms:
         out(f"  단어 목록 : {', '.join(entry.terms)}")
-    out("  이 값은 AI가 제안한 것일 수 있습니다. 확정하면 정본이 되고, 이후 글 검사에 쓰입니다.")
+    out("  위 파일과 줄이 이 값의 출처입니다. 확정하면 정본이 되고, 이후 글 검사에 쓰입니다.")
 
 
 def _typed(ask: Callable[[], str], out: Callable[[str], None], prompt: str) -> str:
@@ -148,7 +148,7 @@ def run_confirm(
     store, entry, claim = _locate("확정", values_file, folder, key)
     if entry.status != "PROPOSED":
         raise NotDone("이미 확정된 값입니다. 말을 고치려면 revise를 쓰세요.")
-    chosen = _terms(terms) or ()
+    chosen = entry.terms if terms is None else (_terms(terms) or ())
     _show(replace(entry, terms=chosen), claim, heading="값을 정본으로 확정합니다.", out=out)
     words = _words(ask, out, f"맞으면 본인 말로 한 줄 적으세요({MIN_WORDS}자 이상, 비우면 취소):")
     stamp = now()

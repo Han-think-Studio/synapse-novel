@@ -83,17 +83,21 @@ env = { SYNAPSE_NOVEL_ROOT = "<novel-root>" }
 
 ## 소설 도구
 
-서버는 다섯 소설 도구를 먼저 나열합니다. 아래 설명은 MCP 도구 설명과 맞춥니다.
+서버는 일곱 소설 도구를 먼저 나열합니다. 아래 설명은 MCP 도구 설명과 맞춥니다.
 
 | 도구 | 설명 |
 |---|---|
 | `synapse_novel_seed` | 등록 폴더 안의 씨앗 파일에서 소설 프로젝트를 만들고 정본 값을 제안합니다. 값은 확인하지 않습니다. |
+| `synapse_novel_import` | 등록 폴더 안의 장별 `.txt`, `.md`, `.docx` 파일을 프로젝트 snapshot으로 가져옵니다. 원본 폴더는 바꾸지 않습니다. 장 번호는 자연스러운 파일명 정렬 순서이며 파일명 숫자와 다를 수 있어 `10.md`가 4장이 될 수 있습니다. |
+| `synapse_novel_audit` | 가져온 모든 장면을 확인된 정본과 대조하고 충돌·가능한 충돌·`unchecked` 값을 보고합니다. 값을 확인하거나 원고를 승인하지 않습니다. |
 | `synapse_novel_plan` | 소설 장면 계획을 검증하고 문제가 없을 때만 저장합니다. 계획 확인은 터미널에서만 가능합니다. |
 | `synapse_novel_beat` | 다음에 요청할 수 있는 소설 비트의 작성 요청과 확인 정본 블록을 만들고 기록합니다. Synapse는 모델을 호출하지 않으며 비트 잠금은 터미널에서만 가능합니다. |
 | `synapse_novel_check` | 인라인으로 받은 한 비트의 글을 확인된 정본과 계획된 행위자에 대조해 검사하고 기록합니다. 비트를 잠그지는 않습니다. |
 | `synapse_novel_status` | 소설 계획과 비트별 요청·검사·잠금·stale 상태를 읽습니다. |
 
 값 확인, 계획 확인, 비트 잠금, 장면 조립 MCP 도구는 없습니다. 이 동작은 사람이 터미널 CLI에서 수행합니다. 사람이 읽는 message/error 문구는 한국어이며, JSON 키 이름은 결과의 의미를 담는 고정 계약이므로 바꾸지 않습니다.
+
+AI 없이 시작하려면 [씨앗 카드 예시](editions/novel/examples/novel/seed.json)를 직접 작성하고 `novel seed`를 원고 가져오기 전이나, 가져온 뒤 정본 값이 비어 있을 때 실행하세요. `synapse_value_propose`는 주장에서 값을 제안하는 AI의 MCP 경로이며, 제안은 사람이 터미널에서 확인해야 합니다. `status`의 최상위 `stale`은 비트 상태이고 `manuscript.stale`은 바뀌었거나 사라진 장 파일 목록입니다. `unchecked`는 텍스트에서 충돌을 검사하지 않는 값입니다. `requirement` 값은 원고 텍스트와 대조하지 않으므로 글에 충돌이 없어도 `canon values check`는 `complete: false`와 종료 코드 `1`을 반환할 수 있습니다.
 
 ## 프리셋 및 프로젝트 도구
 
@@ -119,7 +123,7 @@ env = { SYNAPSE_NOVEL_ROOT = "<novel-root>" }
 | `synapse_canon_gate` | ZIP 프로젝트 또는 새 아이디어에서 어떤 파일이 각 사실을 정하는지 묻고 구조가 정리되었는지 확인합니다. Ready는 승인이 아닙니다. |
 | `synapse_canon_closure` | 확인된 정본 값 중 확정된 값과 아직 기다리는 항목을 읽습니다. 읽기만 하며 Closed는 승인이 아닙니다. |
 | `synapse_canon_claims` | 전달된 파일에서 코드가 읽은 주장만 나누고 각 주장의 확정 근거와 값 제안 조건을 보고합니다. 한 페이지는 최대 500개입니다. |
-| `synapse_value_propose` | 등록 폴더 안의 값 파일에 정본 값을 제안합니다. 키는 코드가 만들며 사람이 터미널에서 확인해야 합니다. |
+| `synapse_value_propose` | 주장에서 정본 값을 제안하는 AI의 MCP 경로입니다. 등록 폴더 안의 값 파일에 저장하고 키는 코드가 만들며, 사람은 터미널에서 확인해야 합니다. |
 | `synapse_canon_context` | 작성 전에 넣을 확인 정본 블록과 나중 검사를 묶는 해시를 반환합니다. 읽기만 합니다. |
 | `synapse_check_output` | 초안을 확인된 정본과 대조하고 값·규칙·정확한 글에 묶인 영수증을 반환합니다. Synapse는 영수증을 저장하지 않습니다. |
 | `synapse_review_receipt` | 영수증이 현재 값·규칙·글과 일치하는지 확인하고 달라진 항목을 보여 줍니다. |

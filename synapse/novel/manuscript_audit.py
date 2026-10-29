@@ -101,6 +101,10 @@ def _load_manifest(manifest_path: Path, maximum_json_bytes: int) -> list[dict[st
         chapter = item.get("chapter")
         file_name = item.get("file")
         digest = item.get("sha256")
+        snapshot_digest = item.get("snapshot_sha256", digest)
+        line_unit = item.get("line_unit", "line")
+        paragraph_offset = item.get("paragraph_offset", 0)
+        title = item.get("title")
         scenes = item.get("scenes")
         if (
             type(chapter) is not int
@@ -111,12 +115,18 @@ def _load_manifest(manifest_path: Path, maximum_json_bytes: int) -> list[dict[st
             or Path(file_name).name != file_name
             or not isinstance(digest, str)
             or _SHA256.fullmatch(digest) is None
+            or not isinstance(snapshot_digest, str)
+            or _SHA256.fullmatch(snapshot_digest) is None
+            or line_unit not in {"line", "paragraph"}
+            or type(paragraph_offset) is not int
+            or paragraph_offset < 0
+            or (title is not None and not isinstance(title, str))
             or not isinstance(scenes, list)
         ):
             raise flow.FlowError(flow.canon_values_cli.CANNOT_RUN, "원고 manifest의 장 정보가 맞지 않습니다.")
         seen_chapters.add(chapter)
         snapshot_path = _safe_snapshot_path(manifest_path, item.get("snapshot_file"))
-        text = _read_snapshot(snapshot_path, flow.MAX_TEXT_BYTES, digest)
+        text = _read_snapshot(snapshot_path, flow.MAX_TEXT_BYTES, snapshot_digest)
         source_lines = text.splitlines(keepends=True)
         scene_rows: list[dict[str, Any]] = []
         for scene in scenes:
@@ -146,6 +156,8 @@ def _load_manifest(manifest_path: Path, maximum_json_bytes: int) -> list[dict[st
                     "first_line": first,
                     "last_line": last,
                     "text": scene_text,
+                    "line_unit": line_unit,
+                    "paragraph_offset": paragraph_offset,
                 }
             )
         chapters.append(
@@ -154,6 +166,9 @@ def _load_manifest(manifest_path: Path, maximum_json_bytes: int) -> list[dict[st
                 "file": file_name,
                 "snapshot_file": item["snapshot_file"],
                 "scenes": scene_rows,
+                "line_unit": line_unit,
+                "paragraph_offset": paragraph_offset,
+                **({"title": title} if title is not None else {}),
             }
         )
     chapters.sort(key=lambda entry: entry["chapter"])
@@ -183,6 +198,8 @@ def _located_conflicts(
     file_name: str,
     text: str,
     first_line: int,
+    line_unit: str,
+    paragraph_offset: int,
 ) -> list[dict[str, Any]]:
     if not isinstance(values, list):
         return []
@@ -190,13 +207,15 @@ def _located_conflicts(
     for value in values:
         if not isinstance(value, dict):
             continue
+        line = _conflict_location(value, text, first_line)
         results.append(
             {
                 **value,
                 "chapter": chapter,
                 "scene": scene,
                 "file": file_name,
-                "line": _conflict_location(value, text, first_line),
+                "line": line + paragraph_offset if line is not None else None,
+                "line_unit": line_unit,
             }
         )
     return results
@@ -297,6 +316,8 @@ def run_audit(project: str | Path) -> tuple[dict[str, Any], int]:
                 file_name=chapter["file"],
                 text=scene["text"],
                 first_line=scene["first_line"],
+                line_unit=chapter["line_unit"],
+                paragraph_offset=chapter["paragraph_offset"],
             )
             scene_possible = _located_conflicts(
                 made["possible"],
@@ -305,6 +326,8 @@ def run_audit(project: str | Path) -> tuple[dict[str, Any], int]:
                 file_name=chapter["file"],
                 text=scene["text"],
                 first_line=scene["first_line"],
+                line_unit=chapter["line_unit"],
+                paragraph_offset=chapter["paragraph_offset"],
             )
             conflicts.extend(scene_conflicts)
             possible.extend(scene_possible)
@@ -338,6 +361,8 @@ def run_audit(project: str | Path) -> tuple[dict[str, Any], int]:
             {
                 "chapter": chapter["chapter"],
                 "file": chapter["file"],
+                "line_unit": chapter["line_unit"],
+                **({"title": chapter["title"]} if "title" in chapter else {}),
                 "scenes": scene_results,
             }
         )

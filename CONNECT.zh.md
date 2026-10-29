@@ -83,17 +83,21 @@ env = { SYNAPSE_NOVEL_ROOT = "<novel-root>" }
 
 ## 小说工具
 
-服务器首先列出五个小说工具。以下说明与 MCP 工具描述一致。
+服务器首先列出七个小说工具。以下说明与 MCP 工具描述一致。
 
 | 工具 | 描述 |
 |---|---|
 | `synapse_novel_seed` | 从注册文件夹内的种子文件创建小说项目并提出正典值；不会确认任何值。 |
+| `synapse_novel_import` | 将注册文件夹内各章 `.txt`、`.md` 或 `.docx` 导入项目快照，不修改源文件夹。章号按自然文件名顺序分配，而不是取文件名数字；`10.md` 可能是第 4 章。 |
+| `synapse_novel_audit` | 对照已确认的正典检查所有导入场景，并报告冲突、可能冲突和 `unchecked` 值；不会确认值或批准手稿。 |
 | `synapse_novel_plan` | 验证小说场景计划；只有没有问题时才保存。确认计划仅限终端。 |
 | `synapse_novel_beat` | 为下一个可请求的小说节拍生成并记录写作请求，其中包含已确认的正典块。Synapse 不调用模型；锁定节拍仅限终端。 |
 | `synapse_novel_check` | 对照已确认的正典和计划中的行动者检查一拍的内联文本，并记录检查结果；它不会锁定节拍。 |
 | `synapse_novel_status` | 读取小说计划以及每拍的已请求、已检查、已锁定和 stale 状态。 |
 
 MCP 没有确认值、确认计划、锁定节拍或合成场景的工具；这些操作由创作者在终端 CLI 执行。面向人的消息和错误文本使用韩语；JSON 键名承载结果含义且保持不变。
+
+若要不使用助手开始，可手动填写[种子卡示例](editions/novel/examples/novel/seed.json)，并在导入前运行 `novel seed`，或在导入后、正典值仍为空时运行。`synapse_value_propose` 是助手通过 MCP 根据 claims 提议值的方式；每项提议仍由创作者在终端确认。`status` 顶层的 `stale` 表示节拍状态，`manuscript.stale` 列出已更改或缺失的章节文件。`unchecked` 值不会与正文进行冲突检查；`requirement` 值永不对照正文，因此即使没有文本冲突，`canon values check` 仍可能返回 `complete: false` 和退出码 `1`。
 
 ## 预设与项目工具
 
@@ -119,7 +123,7 @@ MCP 没有确认值、确认计划、锁定节拍或合成场景的工具；这�
 | `synapse_canon_gate` | 针对 ZIP 项目或新想法询问每项事实由哪个文件决定，并检查结构是否已理清。Ready 不代表批准。 |
 | `synapse_canon_closure` | 只读查看哪些已确认的正典值已经闭合，以及未闭合值仍在等待什么。Closed 不代表批准。 |
 | `synapse_canon_claims` | 按代码将提供的文件切分为 claims，并报告每项 claim 如何得到确认以及从中提出值的条件。每页最多 500 项。 |
-| `synapse_value_propose` | 将正典值提议写入注册文件夹中的值文件。键由代码生成；只能由创作者在终端确认。 |
+| `synapse_value_propose` | 助手通过 MCP 根据 claims 提议正典值的方式。提议写入注册文件夹中的值文件，键由代码生成；只能由创作者在终端确认。 |
 | `synapse_canon_context` | 返回供写作提示使用的已确认正典块，以及用于绑定后续检查的哈希；只读。 |
 | `synapse_check_output` | 对照已确认正典检查草稿，并返回绑定到值、规则和原文的回执。Synapse 不会保存该回执。 |
 | `synapse_review_receipt` | 检查回执是否仍与当前值、规则和原文一致，并指出发生变化的部分。 |
