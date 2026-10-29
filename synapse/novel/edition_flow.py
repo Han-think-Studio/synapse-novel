@@ -26,6 +26,8 @@ from synapse.core.canon_context import (
 from synapse.core.run import RunError, append_artifact, read_artifacts
 from synapse.novel.beat_prompt import beat_messages
 from synapse.novel.beats import parse_beats
+from synapse.novel.manuscript_audit import run_audit
+from synapse.novel.manuscript_import import import_manuscript, manuscript_status
 from synapse.novel.quality_review import evaluate_chunk
 from synapse.novel.scratch_seed import scratch_seed_from_payload, seed_values
 
@@ -799,7 +801,15 @@ def _status(project: Path) -> dict[str, Any]:
 
 
 def status(project: str | Path) -> dict[str, Any]:
-    return _status(_root(project))
+    root = _root(project)
+    result = _status(root)
+    manuscript = manuscript_status(root)
+    result["manuscript"] = manuscript
+    if isinstance(manuscript, Mapping) and (manuscript.get("stale") or manuscript.get("added")):
+        result["next_step"] = manuscript.get(
+            "next_step", "원본 원고 파일이 snapshot과 다릅니다. novel import --replace로 다시 가져오세요."
+        )
+    return result
 
 
 def _lock_beat(project: str | Path, scene: str, beat: int, *, words: str, now: str) -> dict[str, Any]:
@@ -885,6 +895,13 @@ def assemble_scene(project: str | Path, scene_id: str, out: str | Path) -> dict[
 def _dispatch(args: argparse.Namespace, *, ask: Callable[[], str], interactive: Callable[[], bool], now: Callable[[], str]) -> tuple[int, dict[str, Any]]:
     if args.command == "seed":
         return canon_values_cli.DONE, seed_project(args.project, args.seed_file)
+    if args.command == "import":
+        return canon_values_cli.DONE, import_manuscript(
+            args.project, args.manuscript, replace=args.replace
+        )
+    if args.command == "audit":
+        result, code = run_audit(args.project)
+        return code, result
     if args.command == "plan":
         result = plan_project(args.project, args.plan_file)
         return (canon_values_cli.DONE if not result["problems"] else canon_values_cli.NOT_DONE), result
@@ -958,7 +975,12 @@ def _dispatch(args: argparse.Namespace, *, ask: Callable[[], str], interactive: 
     if args.command == "status":
         result = status(args.project)
         stale_plan = result.get("plan") is not None and result["plan"].get("current") is False
-        return (canon_values_cli.NOT_DONE if result["stale"] or stale_plan else canon_values_cli.DONE), result
+        manuscript = result.get("manuscript")
+        stale_manuscript = isinstance(manuscript, Mapping) and bool(manuscript.get("stale") or manuscript.get("added"))
+        return (
+            canon_values_cli.NOT_DONE if result["stale"] or stale_plan or stale_manuscript else canon_values_cli.DONE,
+            result,
+        )
     if args.command == "assemble":
         return canon_values_cli.DONE, assemble_scene(args.project, args.scene, args.out)
     raise FlowError(canon_values_cli.CANNOT_RUN, "알 수 없는 novel 명령입니다.")
@@ -998,6 +1020,12 @@ def main(
     seed = commands.add_parser("seed", help="create a project seed and propose canon values")
     seed.add_argument("--project", type=Path, required=True)
     seed.add_argument("--seed-file", type=Path, required=True)
+    manuscript_import = commands.add_parser("import", help="import a written manuscript as a canon-check snapshot")
+    manuscript_import.add_argument("--project", type=Path, required=True)
+    manuscript_import.add_argument("--manuscript", type=Path, required=True)
+    manuscript_import.add_argument("--replace", action="store_true")
+    audit = commands.add_parser("audit", help="check an imported manuscript against confirmed canon values")
+    audit.add_argument("--project", type=Path, required=True)
     plan = commands.add_parser("plan", help="validate and save a scene plan")
     plan.add_argument("--project", type=Path, required=True)
     plan.add_argument("--plan-file", type=Path, required=True)

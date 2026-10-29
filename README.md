@@ -8,11 +8,15 @@ Synapse Novel is a public writing edition for planning and checking a novel one 
 
 The [connection guide](CONNECT.md) explains Linux and Windows MCP setup. The [edition guide](editions/novel/README.md) covers the CLI. Python 3.12 and PyYAML are required.
 
-The novel CLI commands are `seed`, `plan`, `plan-confirm`, `beat`, `check`, `lock`, `status`, and `assemble`. Run `python editions/novel/synapse_novel.py novel --help` to see them.
+The novel CLI commands are `import`, `audit`, `seed`, `plan`, `plan-confirm`, `beat`, `check`, `lock`, `status`, and `assemble`. Run `python editions/novel/synapse_novel.py novel --help` to see them.
 
-## The five novel tools
+### A manuscript you already wrote
 
-The local MCP server lists these first: `synapse_novel_seed`, `synapse_novel_plan`, `synapse_novel_beat`, `synapse_novel_check`, and `synapse_novel_status`. Plan confirmation, canon confirmation, beat locking, and scene assembly are terminal-only CLI actions. The server and CLI make no model or network call.
+Put the chapter `.txt` and `.md` files directly in a folder, then run `novel import --project P --manuscript DIR`. Propose canon values with `synapse_value_propose`, review them, and confirm them at a terminal with `canon values confirm`. Then run `novel audit --project P`. Import stores a snapshot inside the project and never changes the source folder; use `--replace` for a later import.
+
+## The seven novel tools
+
+The local MCP server lists these first: `synapse_novel_seed`, `synapse_novel_plan`, `synapse_novel_beat`, `synapse_novel_check`, `synapse_novel_status`, `synapse_novel_import`, and `synapse_novel_audit`. Manuscript import and audit do not confirm canon values or lock anything. Plan confirmation, canon confirmation, beat locking, and scene assembly are terminal-only CLI actions. The server and CLI make no model or network call.
 
 For preset and canon work, the package also includes the tools documented in the [connection guide](CONNECT.md). This release contains two preset definitions: `novel_upload_review` and `novel_philosophy_depth`.
 

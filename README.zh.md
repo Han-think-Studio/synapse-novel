@@ -8,11 +8,15 @@ Synapse Novel 是面向公众的逐拍小说规划与检查版本。创作者与
 
 [连接指南](CONNECT.zh.md)介绍 Linux 和 Windows 的 MCP 设置。[版本指南](editions/novel/README.zh.md)介绍 CLI。需要 Python 3.12 和 PyYAML。
 
-小说 CLI 命令为 `seed`、`plan`、`plan-confirm`、`beat`、`check`、`lock`、`status` 和 `assemble`。运行 `python editions/novel/synapse_novel.py novel --help` 查看完整列表。
+小说 CLI 命令为 `import`、`audit`、`seed`、`plan`、`plan-confirm`、`beat`、`check`、`lock`、`status` 和 `assemble`。运行 `python editions/novel/synapse_novel.py novel --help` 查看完整列表。
 
-## 五个小说工具
+### 检查已经写好的手稿
 
-本地 MCP 服务器首先列出以下工具：`synapse_novel_seed`、`synapse_novel_plan`、`synapse_novel_beat`、`synapse_novel_check`、`synapse_novel_status`。确认计划、确认正典值、锁定节拍和合成场景只能通过终端 CLI 完成。服务器和 CLI 都不会调用模型或网络。
+将每章的 `.txt` 和 `.md` 文件直接放入同一个文件夹，然后运行 `novel import --project P --manuscript DIR`。使用 `synapse_value_propose` 提议正典值，审阅后在终端运行 `canon values confirm` 确认。接着运行 `novel audit --project P`。导入会在项目内保存快照，不会修改源文件夹；再次导入时请使用 `--replace`。
+
+## 七个小说工具
+
+本地 MCP 服务器首先列出以下工具：`synapse_novel_seed`、`synapse_novel_plan`、`synapse_novel_beat`、`synapse_novel_check`、`synapse_novel_status`、`synapse_novel_import`、`synapse_novel_audit`。手稿导入和审计工具不会确认正典值或锁定任何内容。确认计划、确认正典值、锁定节拍和合成场景只能通过终端 CLI 完成。服务器和 CLI 都不会调用模型或网络。
 
 预设与正典工具见[连接指南](CONNECT.zh.md)。此版本包含两个预设定义：`novel_upload_review` 和 `novel_philosophy_depth`。
 
