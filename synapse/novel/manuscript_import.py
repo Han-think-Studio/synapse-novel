@@ -72,13 +72,26 @@ def _scene_ranges(text: str, chapter: int) -> list[dict[str, Any]]:
 
 
 _CHAPTER_SUFFIXES = {".txt", ".md", ".docx"}
-_UNSUPPORTED_WORD_SUFFIXES = {".doc", ".docm", ".hwp", ".hwpx"}
+_UNSUPPORTED_WORD_SUFFIXES = {".doc", ".docm"}
+_UNSUPPORTED_HANGUL_SUFFIXES = {".hwp", ".hwpx"}
+_UNSUPPORTED_SUFFIXES = _UNSUPPORTED_WORD_SUFFIXES | _UNSUPPORTED_HANGUL_SUFFIXES
+
+
+def unsupported_message(name: str) -> str:
+    """What to do with a manuscript file Synapse does not read, in the words of the program that made it."""
+
+    if Path(name).suffix.lower() in _UNSUPPORTED_HANGUL_SUFFIXES:
+        return f"한글 파일은 읽지 않습니다: {name}. 한글에서 .docx로 저장하거나 .txt로 내보낸 뒤 다시 가져오세요."
+    return f"옛 Word 형식은 읽지 않습니다: {name}. Word에서 .docx로 저장하거나 .txt 또는 .md로 내보내세요."
 
 
 def _chapter_files(
     folder: Path, *, reject_unsupported: bool = True
 ) -> tuple[list[Path], list[str]]:
-    """The chapter files directly in ``folder`` in natural order, and the names of the other files."""
+    """The chapter files directly in ``folder`` in natural order, and the names of the other files.
+
+    A file in a format Synapse does not read (`.doc`, `.hwp`, …) refuses the whole import, by name; with
+    ``reject_unsupported`` false it is listed by ``unsupported_files`` instead and left out here."""
 
     try:
         entries = list(folder.iterdir())
@@ -100,7 +113,7 @@ def _chapter_files(
         suffix = path.suffix.lower()
         if suffix in _CHAPTER_SUFFIXES:
             files.append(path)
-        elif suffix in _UNSUPPORTED_WORD_SUFFIXES:
+        elif suffix in _UNSUPPORTED_SUFFIXES:
             unsupported.append(path)
         else:
             skipped.append(path.name)
@@ -108,15 +121,23 @@ def _chapter_files(
     files.sort(key=lambda path: _natural_key(path.name))
     unsupported.sort(key=lambda path: _natural_key(path.name))
     if unsupported and reject_unsupported:
-        name = unsupported[0].name
-        raise ManuscriptImportError(
-            f"지원하지 않는 Word 형식입니다: {name}. Word에서 .docx로 저장하거나 .txt 또는 .md로 내보내세요."
-        )
-    if not reject_unsupported:
-        files.extend(unsupported)
-        files.sort(key=lambda path: _natural_key(path.name))
+        raise ManuscriptImportError(unsupported_message(unsupported[0].name))
     skipped.sort(key=_natural_key)
     return files, skipped
+
+
+def unsupported_files(folder: Path) -> list[str]:
+    """The names of the files in ``folder`` that would refuse an import, in natural order."""
+
+    try:
+        entries = list(folder.iterdir())
+    except OSError:
+        return []
+    names = [
+        path.name for path in entries
+        if not _hidden(path) and path.suffix.lower() in _UNSUPPORTED_SUFFIXES and path.is_file()
+    ]
+    return sorted(names, key=_natural_key)
 
 
 def _snapshot_docx_paragraphs(paragraphs: list[Paragraph]) -> bytes:
@@ -136,7 +157,7 @@ def _source_sha256(path: Path) -> str:
 
 def _read_source_folder(
     manuscript: str | Path, *, max_text_bytes: int, max_scenes: int
-) -> tuple[Path, list[dict[str, Any]], list[str], list[dict[str, Any]]]:
+) -> tuple[Path, list[dict[str, Any]], list[str], list[dict[str, Any]], list[str]]:
     folder = Path(manuscript).expanduser().resolve()
     if not folder.is_dir():
         raise ManuscriptImportError(f"원고 폴더가 없습니다: {folder}")
@@ -146,6 +167,7 @@ def _read_source_folder(
 
     chapters: list[dict[str, Any]] = []
     front_matter: list[dict[str, Any]] = []
+    warnings: list[str] = []
     scene_count = 0
     source_rows: list[tuple[Path, list[tuple[str, bytes, str | None, int, str]]]] = []
     for path in files:
@@ -185,6 +207,11 @@ def _read_source_folder(
                         )
                     )
             else:
+                if headings:
+                    warnings.append(
+                        f"{path.name}에 '제목 1' 문단이 있지만 폴더에 장 파일이 여럿이라 장으로 나누지 않고 파일 하나를 "
+                        "한 장으로 읽었습니다. 한 파일을 장으로 나누려면 그 파일만 폴더에 두세요."
+                    )
                 sections.append(
                     (
                         source_digest,
@@ -243,7 +270,7 @@ def _read_source_folder(
                     **({"title": title} if title is not None else {}),
                 }
             )
-    return folder, chapters, skipped, front_matter
+    return folder, chapters, skipped, front_matter, warnings
 
 
 def _read_json(path: Path) -> dict[str, Any]:
@@ -370,7 +397,7 @@ def import_manuscript(
     if not root.exists() and not root.parent.is_dir():
         raise ManuscriptImportError(f"프로젝트 상위 폴더가 없습니다: {root.parent}")
 
-    source_dir, chapters, skipped, front_matter = _read_source_folder(
+    source_dir, chapters, skipped, front_matter, warnings = _read_source_folder(
         manuscript, max_text_bytes=MAX_TEXT_BYTES, max_scenes=MAX_SCENES
     )
     snapshot = root / "novel" / "manuscript"
@@ -454,6 +481,7 @@ def import_manuscript(
         ],
         "front_matter": front_matter,
         "skipped": skipped,
+        **({"warnings": warnings} if warnings else {}),
         "message": "원고 snapshot을 가져왔습니다. 원본 폴더는 변경하지 않았습니다.",
     }
 
@@ -537,6 +565,7 @@ def manuscript_status(project: str | Path) -> dict[str, Any] | None:
         )
     imported = {item["file"] for item in chapters}
     added: list[str] = []
+    unsupported: list[str] = []
     if source_dir.is_dir():
         try:
             added = [
@@ -546,8 +575,19 @@ def manuscript_status(project: str | Path) -> dict[str, Any] | None:
             ]
         except ManuscriptImportError:
             added = []
-    result = {"chapters": chapters, "stale": stale, "added": added, "last_audit": _last_audit(root)}
-    if stale or added:
+        unsupported = unsupported_files(source_dir)
+    result = {
+        "chapters": chapters,
+        "stale": stale,
+        "added": added,
+        "unsupported": unsupported,
+        "last_audit": _last_audit(root),
+    }
+    if unsupported:
+        result["next_step"] = (
+            f"{unsupported_message(unsupported[0])} 그런 파일이 폴더에 있으면 다시 가져오기가 거절됩니다."
+        )
+    elif stale or added:
         result["next_step"] = (
             "원고 원본이 바뀌었거나, 없어졌거나, 새 장이 생겼습니다. novel import --replace로 snapshot을 갱신하세요."
         )

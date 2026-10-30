@@ -67,12 +67,12 @@ _AGE_PREDICATE_PHRASE = re.compile(
 )
 _AGE_SUBJECT_TAIL = re.compile(
     r"\s*(?:씨|님|선생|박사)?\s*(?:은|는|이|가)\s*"
-    r"(?:(?:올해(?:로)?|현재|지금|오늘|요즘|그\s*무렵|그때|그\s*시절|당시)\s*)?$"
+    r"(?:(?:올해(?:로)?|이제|현재|지금|오늘|요즘|그\s*무렵|그때|그\s*시절|당시)\s*)?$"
 )
 _AGE_SUBJECT_WORD = re.compile(
     r"(?<![가-힣])(?P<name>[가-힣]{2,4})(?:\s*(?:씨|님|선생|박사))?"
     r"(?P<particle>은|는|이|가)\s*"
-    r"(?:(?:올해(?:로)?|현재|지금|오늘|요즘|그\s*무렵|그때|그\s*시절|당시)\s*)?$"
+    r"(?:(?:올해(?:로)?|이제|현재|지금|오늘|요즘|그\s*무렵|그때|그\s*시절|당시)\s*)?$"
 )
 _AGE_NONPERSON_SUBJECTS = {"나이", "연령"}
 _AGE_BIRTHDAY_AFTER = re.compile(r"\s*생일")
@@ -96,7 +96,11 @@ _AGE_PAST_ANCHOR = re.compile(
 )
 _AGE_PAST_EVENT_BEFORE = re.compile(r"[가-힣]{1,10}(?:한|했던|하던)\s*(?:건|것|일|때)\s*$")
 _AGE_YEARS_AGO = re.compile(rf"({_AGE_DURATION_NUMBER})\s*년\s*전")
-_AGE_CURRENT_ANCHOR = re.compile(r"(?:올해(?:로)?|현재|지금|오늘|요즘)\s*$")
+_AGE_CURRENT_ANCHOR = re.compile(r"(?:올해(?:로)?|이제|현재|지금|오늘|요즘)\s*$")
+# A time to come right before an age (`내년이면 예순넷이다`): a future age, not the present one.
+_AGE_FUTURE_BEFORE = re.compile(
+    r"(?:내년|후년|이듬해|다음\s*해|[0-9일이삼사오육칠팔구십]+\s*년\s*(?:뒤|후))(?:이면|에는|엔|면)?\s*$"
+)
 _CHARACTER_ATTRIBUTE = re.compile(r"^character\.(.+)\.([^.]+)$")
 _SIMILARITY = re.compile(r"같지|같은|같았|같다|똑같|비슷|동일|닮았|동갑")
 _NEGATION = re.compile(
@@ -281,8 +285,22 @@ def _find_linking_siot_prohibition(text: str, phrase: str) -> tuple[str, ...]:
             continue
         if start and (text[start - 1].isalnum() or text[start - 1] == "_"):
             continue
-        evidence.append(text[start : end + 1])
+        evidence.append(_compound_word(text, start, end))
     return tuple(dict.fromkeys(evidence))
+
+
+def _compound_word(text: str, start: int, variant_end: int) -> str:
+    """The whole compound (`노랫소리` from `노랫소리가`): the word, less a closing particle that leaves more than the
+    linking syllable (`바닷가` keeps its `가`)."""
+
+    end = variant_end
+    while end < len(text) and "가" <= text[end] <= "힣":
+        end += 1
+    word = text[start:end]
+    for particle in ("에서", "으로", "이", "가", "을", "를", "은", "는", "의", "에", "도", "만", "와", "과", "로"):
+        if word.endswith(particle) and len(word) - len(particle) > variant_end - start:
+            return word[: -len(particle)]
+    return word
 
 
 def _canonical_polarity(text: str) -> str | None:
@@ -571,11 +589,26 @@ def _postposed_subject_age_owner(
         after,
     )
     if unregistered_subject and unregistered_subject.group("name") not in _AGE_NONPERSON_SUBJECTS:
-        surface = unregistered_subject.group("name")
-        if any(form in surface for name in known_names for form in _name_forms(name)):
+        kinship = _surface_against_names(unregistered_subject.group("name"), known_names)
+        if kinship == "same":
             return None, False, False
         return None, False, True
     return None, False, False
+
+
+def _surface_against_names(surface: str, known_names: Iterable[str]) -> str:
+    """``same`` for a character's name, its familiar form (`하진이`) or a name before it (`박수영`: perhaps a surname,
+    still worth asking); ``other`` for a longer name that begins with one (`하진주`, `서진우`: someone else);
+    ``none`` when no character's name is in it."""
+
+    forms = [form for name in known_names for form in _name_forms(name)]
+    if any(surface in (form, form + "이") for form in forms):
+        return "same"
+    if any(surface.startswith(form) for form in forms):
+        return "other"
+    if any(form in surface for form in forms):
+        return "same"
+    return "none"
 
 
 def _subject_age_owner(
@@ -601,9 +634,11 @@ def _subject_age_owner(
 
     unregistered_subject = _AGE_SUBJECT_WORD.search(before)
     if unregistered_subject and unregistered_subject.group("name") not in _AGE_NONPERSON_SUBJECTS:
-        surface = unregistered_subject.group("name")
-        if any(form in surface for name in known_names for form in _name_forms(name)):
+        kinship = _surface_against_names(unregistered_subject.group("name"), known_names)
+        if kinship == "same":
             return None, False, False
+        if kinship == "other":
+            return None, False, True  # a longer name built on a character's name is someone else
         prior_genitive = any(
             end <= sentence_start + unregistered_subject.start("name")
             and re.search(r"의(?:\s+[^\n,.;!?]*)?\s*$", sentence[end - sentence_start : unregistered_subject.start("name")])
@@ -799,7 +834,10 @@ def _is_past_age(
     anchored = bool(_AGE_PAST_ANCHOR.search(sentence))
     anchored |= _AGE_PAST_EVENT_BEFORE.search(preceding) is not None
     if not anchored and re.match(r"\s*의", after):
-        anchored = bool(_AGE_PAST_ANCHOR.search(_paragraph_at(text, mention.start())))
+        # `스물두 살의 봄이었다` may take its time from an earlier sentence of the same paragraph, never from a
+        # later one. A paragraph ends at any line break: in a Word manuscript each paragraph is one line.
+        line_start = text.rfind("\n", 0, mention.start()) + 1
+        anchored = bool(_AGE_PAST_ANCHOR.search(text[line_start:sentence_end]))
     if not anchored:
         return False
 
@@ -843,7 +881,7 @@ def _check_age(text: str, values: tuple[CanonValue, ...], conflicts: list[Confli
         earlier = text[max(sentence_start, mention.start() - 30):mention.start()]
         after = text[mention.end():min(sentence_end, mention.end() + 24)]
         after_sentence = text[mention.end():sentence_end]
-        if _AGE_PLAN_AFTER.match(after_sentence):
+        if _AGE_PLAN_AFTER.match(after_sentence) or _AGE_FUTURE_BEFORE.search(earlier):
             continue
         if _is_past_age(text, mention, sentence_start, sentence_end):
             years_ago = _AGE_YEARS_AGO.search(sentence)
@@ -872,8 +910,13 @@ def _check_age(text: str, values: tuple[CanonValue, ...], conflicts: list[Confli
             or re.match(r"\s*(?:아이|어린이|소년|소녀|동생|형|누나|아들|딸)", after)
             or re.search(r"(?:동생|형|누나|아들|딸)\s+[가-힣]{2,4}(?:은|는|이|가)\s*$", earlier)
         )
-        item = Conflict("R1", value.key, value.claim_id, mention.group(0),
-                        f"{owner}의 확정 나이는 {canonical_age}세지만 다른 나이가 언급됩니다.")
+        message = (
+            f"{owner}의 확정 나이는 {canonical_age}세인데 다른 나이가 보입니다. 누구의 나이인지, 지금의 나이인지가 "
+            "글만으로 확실하지 않아 사람의 확인이 필요합니다."
+            if uncertain
+            else f"{owner}의 확정 나이는 {canonical_age}세지만 다른 나이가 언급됩니다."
+        )
+        item = Conflict("R1", value.key, value.claim_id, mention.group(0), message)
         _add_conflict(possible if uncertain else conflicts, item)
 
 def _character_name(key: str) -> str | None:

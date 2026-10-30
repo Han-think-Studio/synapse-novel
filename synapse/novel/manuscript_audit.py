@@ -221,6 +221,18 @@ def _located_conflicts(
     return results
 
 
+def _unchecked_once(records: list[dict[str, Any]]) -> list[dict[str, Any]]:
+    """Each value no rule could read, once, with the scenes it was left unread in."""
+
+    merged: dict[tuple[object, object], dict[str, Any]] = {}
+    for record in records:
+        key = (record.get("key"), record.get("file"))
+        entry = merged.setdefault(key, {k: v for k, v in record.items() if k not in {"chapter", "scene"}} | {"scenes": []})
+        if record.get("scene") not in entry["scenes"]:
+            entry["scenes"].append(record.get("scene"))
+    return list(merged.values())
+
+
 def _unique_records(records: list[dict[str, Any]]) -> list[dict[str, Any]]:
     found: dict[tuple[object, ...], dict[str, Any]] = {}
     for record in records:
@@ -270,7 +282,7 @@ def run_audit(project: str | Path) -> tuple[dict[str, Any], int]:
     if not values_path.exists():
         return _not_ready(
             project_id,
-            "정본 값을 제안한 뒤 `canon values confirm`으로 터미널에서 하나 이상 확정하세요.",
+            "정본 값을 넣으세요: 씨앗 카드로 `novel seed`를 하거나 AI 도구로 제안한 뒤, `canon values confirm`으로 터미널에서 하나 이상 확정하세요.",
         )
     try:
         # As the writing flow does: values whose source file is in the project are revalidated against it and
@@ -283,7 +295,7 @@ def run_audit(project: str | Path) -> tuple[dict[str, Any], int]:
     if not canon_values.checkable(store):
         return _not_ready(
             project_id,
-            "정본 값을 제안한 뒤 `canon values confirm`으로 터미널에서 하나 이상 확정하세요.",
+            "정본 값을 넣으세요: 씨앗 카드로 `novel seed`를 하거나 AI 도구로 제안한 뒤, `canon values confirm`으로 터미널에서 하나 이상 확정하세요.",
         )
 
     run_id = str(uuid.uuid4())
@@ -369,6 +381,7 @@ def run_audit(project: str | Path) -> tuple[dict[str, Any], int]:
 
     not_examined = _unique_records(not_examined)
     left_out = _unique_records(left_out)
+    unchecked = _unchecked_once(unchecked)
     audit_folder = novel / "audits"
     if audit_folder.is_symlink():
         raise flow.FlowError(canon_values_cli.CANNOT_RUN, "감사 기록 폴더는 심볼릭 링크일 수 없습니다.")

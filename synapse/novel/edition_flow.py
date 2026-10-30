@@ -381,6 +381,23 @@ def _current_previous_content(
 
 
 def seed_project(project: str | Path, seed_file: str | Path) -> dict[str, Any]:
+    """Seed a project; a missing project folder is made, as `import` makes one, and taken back if seeding fails."""
+
+    path = Path(project).expanduser().resolve()
+    made = not path.exists() and path.parent.is_dir()
+    if made:
+        path.mkdir()
+    try:
+        return _seed_project(path, seed_file)
+    except BaseException:
+        if made:
+            for leftover in sorted(path.rglob("*"), key=lambda item: len(item.parts), reverse=True):
+                leftover.unlink() if leftover.is_file() else leftover.rmdir()
+            path.rmdir()
+        raise
+
+
+def _seed_project(project: Path, seed_file: str | Path) -> dict[str, Any]:
     root = _root(project)
     folder = _novel(root)
     identity_path = _novel(root) / "project.json"
@@ -864,7 +881,7 @@ def status(project: str | Path) -> dict[str, Any]:
     result = _status(root)
     manuscript = manuscript_status(root)
     result["manuscript"] = manuscript
-    if isinstance(manuscript, Mapping) and (manuscript.get("stale") or manuscript.get("added")):
+    if isinstance(manuscript, Mapping) and (manuscript.get("stale") or manuscript.get("added") or manuscript.get("unsupported")):
         result["next_step"] = manuscript.get(
             "next_step", "원본 원고 파일이 snapshot과 다릅니다. novel import --replace로 다시 가져오세요."
         )
@@ -1035,7 +1052,7 @@ def _dispatch(args: argparse.Namespace, *, ask: Callable[[], str], interactive: 
         result = status(args.project)
         stale_plan = result.get("plan") is not None and result["plan"].get("current") is False
         manuscript = result.get("manuscript")
-        stale_manuscript = isinstance(manuscript, Mapping) and bool(manuscript.get("stale") or manuscript.get("added"))
+        stale_manuscript = isinstance(manuscript, Mapping) and bool(manuscript.get("stale") or manuscript.get("added") or manuscript.get("unsupported"))
         return (
             canon_values_cli.NOT_DONE if result["stale"] or stale_plan or stale_manuscript else canon_values_cli.DONE,
             result,

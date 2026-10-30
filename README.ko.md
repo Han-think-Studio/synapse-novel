@@ -14,6 +14,8 @@ Synapse Novel은 소설을 비트 단위로 계획하고 검사하는 공개 작
 
 장별 `.txt`, `.md`, `.docx` 파일을 한 폴더에 바로 넣고 `novel import --project P --manuscript DIR`를 실행하세요. 장마다 DOCX 파일을 둘 수도 있고, 단일 `.docx`의 Word `제목 1` (`heading 1`) 문단마다 장을 나눌 수도 있습니다. 가져오기가 붙이는 장 번호는 자연스러운 파일명 정렬 순서입니다. 파일명 속 숫자가 아니라 가져온 순서이므로 `10.md`가 4장이 될 수도 있습니다. 가져오기는 프로젝트 안에 스냅샷을 저장하며 원본 폴더는 바꾸지 않습니다. 다시 가져오려면 `--replace`를 사용하세요.
 
+워드 파일은 변경 추적을 모두 받아들인 뒤의 글만 검사하고, 위치는 문단 번호로 알려 줍니다(`line_unit: "paragraph"`, 빈 문단까지 파일 전체를 셉니다. 텍스트 파일은 `line_unit: "line"`). 폴더에 장 파일이 `.docx` 하나뿐이면 첫 `제목 1`(스타일 이름으로 찾으므로 영어 워드의 `heading 1`도 됩니다) 앞의 문단은 장이 아니라 `front_matter`로 따로 적고, 각 제목은 그 장의 `title`이 됩니다. 다른 장 파일과 함께 있으면 `.docx`는 통째로 한 장으로 읽고, 그렇게 했다는 것을 `warnings`에 적습니다. 옛 워드 `.doc`/`.docm`과 한글 `.hwp`/`.hwpx`는 읽지 않습니다. 폴더에 하나라도 있으면 가져오기가 멈추니 먼저 `.docx`로 저장하거나 `.txt`로 내보내세요. `novel status`는 바뀌거나 없어진 장을 `manuscript.stale`, 새 장을 `manuscript.added`, 읽을 수 없는 파일을 `manuscript.unsupported`에 보여 줍니다.
+
 AI 없이 시작하려면 [씨앗 카드 예시](editions/novel/examples/novel/seed.json)를 직접 채우고 `python editions/novel/synapse_novel.py novel seed --project P --seed-file F`를 실행하세요. 원고를 가져오기 전이나, 가져온 뒤 정본 값 파일이 비어 있을 때 실행할 수 있습니다. 먼저 씨앗을 만들면 가져오기가 그 프로젝트 파일을 보존하고, 먼저 원고를 가져오면 씨앗 명령이 빈 정본 값 파일을 채웁니다. 씨앗 결과에는 제안된 값마다 터미널에서 실행할 전체 확인 명령이 나옵니다. 각 명령을 살펴보고 직접 실행한 다음 `novel audit --project P`를 실행하세요.
 
 주장에서 AI가 정본 값을 제안하게 하려면 MCP 도구 `synapse_value_propose`를 사용합니다. 이 경로도 제안만 하며, 사람은 각 값을 살펴본 뒤 터미널에서 `canon values confirm`으로 확인해야 합니다.

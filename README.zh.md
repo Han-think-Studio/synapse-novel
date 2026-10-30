@@ -14,6 +14,8 @@ Synapse Novel 是面向公众的逐拍小说规划与检查版本。创作者与
 
 将每章的 `.txt`、`.md` 或 `.docx` 文件直接放入同一个文件夹，然后运行 `novel import --project P --manuscript DIR`。每章可以各用一个 DOCX 文件；也可以把整本书放在单个 `.docx` 中，按 Word 的“标题 1”段落（`heading 1`）拆分章节。导入按自然文件名顺序编号；章号表示导入顺序，而不是文件名里的数字，因此 `10.md` 也可能是第 4 章。导入会在项目内保存快照，不会修改源文件夹；再次导入时请使用 `--replace`。
 
+Word 文件只检查接受全部修订后的文字，位置以段落编号表示（`line_unit: "paragraph"`，按整个文件计数，空段落也算；文本文件为 `line_unit: "line"`）。文件夹里只有一个 `.docx` 章节文件时，第一个“标题 1”（按样式名称识别，所以韩文 Word 的 `제목 1` 和英文 Word 的 `heading 1` 都可以）之前的段落不算章节，导入会把它们列为 `front_matter`，每个标题成为该章的 `title`。与其他章节文件放在一起时，`.docx` 会整体作为一章读取，导入会在 `warnings` 中说明。旧版 Word `.doc`/`.docm` 和韩文 `.hwp`/`.hwpx` 不会读取：文件夹里只要有一个，导入就会停止，请先另存为 `.docx` 或导出为 `.txt`。`novel status` 在 `manuscript.stale` 中列出已修改或缺失的章节，在 `manuscript.added` 中列出新章节，在 `manuscript.unsupported` 中列出无法读取的文件。
+
 如果不使用助手，可手动填写[种子卡示例](editions/novel/examples/novel/seed.json)，然后运行 `python editions/novel/synapse_novel.py novel seed --project P --seed-file F`。可以在导入前运行，也可以在导入后、正典值文件仍为空时运行。先生成种子时，导入会保留项目文件；先导入时，种子命令会填入空的正典值文件。种子结果会为每个提议值给出完整的终端确认命令。请逐条检查并亲自运行，然后执行 `novel audit --project P`。
 
 若希望助手根据 claims 提议正典值，可使用 MCP 工具 `synapse_value_propose`。它只负责提议；创作者仍须在终端审阅每个值并运行 `canon values confirm` 确认。
