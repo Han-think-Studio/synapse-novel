@@ -10,6 +10,10 @@ The [connection guide](CONNECT.md) explains Linux and Windows MCP setup. The [ed
 
 The novel CLI commands are ten: `import`, `audit`, `seed`, `plan`, `plan-confirm`, `beat`, `check`, `lock`, `status`, and `assemble`. Run `python editions/novel/synapse_novel.py novel --help` to see them.
 
+### Write on the screen
+
+Run `run-screen.bat PROJECT_FOLDER` (or `python -m synapse.core.shell_server --novel-project PROJECT_FOLDER`) to open a screen served from this computer only. It shows the seven steps (seed, plan, plan-confirm, beat, check, lock, assemble) and lets you paste seed and plan JSON, view each beat request, check a beat and assemble a scene. Confirming a canon value, confirming the plan and locking a beat ask for the six-digit code printed in the window that started the screen, together with your own words. The screen calls no model either; your AI writes the beats as before.
+
 ### A manuscript you already wrote
 
 Put chapter `.txt`, `.md`, or `.docx` files directly in a folder, then run `novel import --project P --manuscript DIR`. A folder may contain one `.docx` per chapter, or a single `.docx` split into chapters at Word `heading 1` paragraphs. Import numbers chapters by natural filename order; the chapter number is that order, not the digits in the filename, so `10.md` may be chapter 4. Import stores a snapshot inside the project and never changes the source folder; use `--replace` for a later import.
@@ -22,7 +26,7 @@ If you want an assistant to propose values from claims, `synapse_value_propose` 
 
 ## The seven novel tools
 
-The local MCP server lists these first: `synapse_novel_seed`, `synapse_novel_plan`, `synapse_novel_beat`, `synapse_novel_check`, `synapse_novel_status`, `synapse_novel_import`, and `synapse_novel_audit`. Manuscript import and audit do not confirm canon values or lock anything. Plan confirmation, canon confirmation, beat locking, and scene assembly are terminal-only CLI actions. The server and CLI make no model or network call.
+The local MCP server lists these first: `synapse_novel_seed`, `synapse_novel_plan`, `synapse_novel_beat`, `synapse_novel_check`, `synapse_novel_status`, `synapse_novel_import`, and `synapse_novel_audit`. Manuscript import and audit do not confirm canon values or lock anything. Plan confirmation, canon confirmation and beat locking are a person's actions: at a terminal with the CLI, or on the local screen with the code printed in its own window. Scene assembly runs from the CLI or the screen. None of them goes over MCP. The server, the CLI and the screen make no model call and no outside network call.
 
 For preset and canon work, the package also includes the tools documented in the [connection guide](CONNECT.md). This release contains two preset definitions: `novel_upload_review` and `novel_philosophy_depth`.
 

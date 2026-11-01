@@ -10,6 +10,10 @@ Synapse Novel은 소설을 비트 단위로 계획하고 검사하는 공개 작
 
 소설 CLI 명령은 열 개입니다: `import`, `audit`, `seed`, `plan`, `plan-confirm`, `beat`, `check`, `lock`, `status`, `assemble`. `python editions/novel/synapse_novel.py novel --help`에서 전체 목록을 볼 수 있습니다.
 
+### 화면으로 쓰기
+
+`run-screen.bat 프로젝트폴더`(또는 `python -m synapse.core.shell_server --novel-project 프로젝트폴더`)를 실행하면 이 컴퓨터에서만 열리는 화면이 뜹니다. 화면에는 씨앗 → 계획 → 계획 확정 → 비트 쓰기 → 검사 → 잠금 → 조립 일곱 단계가 표시되고, 씨앗과 계획 JSON 붙여 넣기, 비트 요청 보기, 비트 검사, 장면 조립을 할 수 있습니다. 정본 값 확정, 계획 확정, 비트 잠금은 화면을 띄운 창에 찍히는 6자리 확인 코드와 본인 말을 입력해야 합니다. 화면도 모델을 호출하지 않으며, 비트 본문은 지금처럼 사용하는 AI가 씁니다.
+
 ### 이미 쓴 원고
 
 장별 `.txt`, `.md`, `.docx` 파일을 한 폴더에 바로 넣고 `novel import --project P --manuscript DIR`를 실행하세요. 장마다 DOCX 파일을 둘 수도 있고, 단일 `.docx`의 Word `제목 1` (`heading 1`) 문단마다 장을 나눌 수도 있습니다. 가져오기가 붙이는 장 번호는 자연스러운 파일명 정렬 순서입니다. 파일명 속 숫자가 아니라 가져온 순서이므로 `10.md`가 4장이 될 수도 있습니다. 가져오기는 프로젝트 안에 스냅샷을 저장하며 원본 폴더는 바꾸지 않습니다. 다시 가져오려면 `--replace`를 사용하세요.
@@ -22,7 +26,7 @@ AI 없이 시작하려면 [씨앗 카드 예시](editions/novel/examples/novel/s
 
 ## 소설 도구 일곱 개
 
-로컬 MCP 서버는 다음 도구를 먼저 나열합니다: `synapse_novel_seed`, `synapse_novel_plan`, `synapse_novel_beat`, `synapse_novel_check`, `synapse_novel_status`, `synapse_novel_import`, `synapse_novel_audit`. 원고 가져오기와 감사 도구는 정본 값을 확인하거나 무엇이든 잠그지 않습니다. 계획 확인, 정본 값 확인, 비트 잠금, 장면 조립은 터미널 CLI에서만 할 수 있습니다. 서버와 CLI는 모델이나 네트워크를 호출하지 않습니다.
+로컬 MCP 서버는 다음 도구를 먼저 나열합니다: `synapse_novel_seed`, `synapse_novel_plan`, `synapse_novel_beat`, `synapse_novel_check`, `synapse_novel_status`, `synapse_novel_import`, `synapse_novel_audit`. 원고 가져오기와 감사 도구는 정본 값을 확인하거나 무엇이든 잠그지 않습니다. 계획 확인, 정본 값 확인, 비트 잠금은 사람이 합니다. 터미널 CLI에서 하거나, 로컬 화면에서 그 창에 찍힌 확인 코드로 합니다. 장면 조립은 CLI나 화면에서 합니다. 이 중 어느 것도 MCP로는 할 수 없습니다. 서버, CLI, 화면은 모델이나 외부 네트워크를 호출하지 않습니다.
 
 프리셋과 정본 관련 도구도 [연결 안내서](CONNECT.ko.md)에 있습니다. 이 공개 판에는 `novel_upload_review`와 `novel_philosophy_depth` 두 프리셋 정의가 포함됩니다.
 

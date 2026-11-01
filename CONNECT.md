@@ -90,8 +90,8 @@ The server lists these seven novel tools first. Their descriptions match the MCP
 | `synapse_novel_seed` | Create a novel project from a seed file inside the registered folder and propose canon values. It does not confirm any value. |
 | `synapse_novel_import` | Import chapter `.txt`, `.md`, or `.docx` files under the registered folder into the project snapshot. The source folder is not changed. Chapter numbers follow natural filename order, not the digits in a name; `10.md` may be chapter 4. |
 | `synapse_novel_audit` | Check every imported scene against confirmed canon and report findings, possible conflicts, and unchecked values. It does not confirm values or approve the manuscript. |
-| `synapse_novel_plan` | Validate a novel scene plan and save it only when it has no problems. Plan confirmation is terminal-only. |
-| `synapse_novel_beat` | Request and record a writing request for the next eligible novel beat, including the confirmed canon block. Synapse calls no model; beat locking is terminal-only. |
+| `synapse_novel_plan` | Validate a novel scene plan and save it only when it has no problems. Plan confirmation is never done over MCP: at a terminal, or on the local screen with its code. |
+| `synapse_novel_beat` | Request and record a writing request for the next eligible novel beat, including the confirmed canon block. Synapse calls no model; beat locking is never done over MCP: at a terminal, or on the local screen with its code. |
 | `synapse_novel_check` | Check inline prose for one novel beat against confirmed canon and its planned actors, then record the check. It does not lock the beat. |
 | `synapse_novel_status` | Read the novel plan and each beat's requested, checked, locked, and stale status. |
 

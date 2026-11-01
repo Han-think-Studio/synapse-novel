@@ -5,9 +5,12 @@ Each preset has at most five tasks. A task is exported as one ``TaskPacket``, an
 model with a JSON object whose shape the server enforces (``response_schema``), re-checked
 strictly here, and accepted or rejected by a person before a dependent task may start.
 
-Nothing in this module chooses a preset, calls a model or writes a file on its own. ``run_task``
-calls the supplied ``complete`` once per explicit call; a rejected or failed attempt is recorded and
-never replayed automatically. Model output is a review candidate, never canon.
+Nothing in this module chooses a preset, calls a model or writes a file on its own. A model is
+called only through ``synapse.core.preset_dispatch``, one attempt per call through the core's
+one-task entry (DEC-0245); here an answer already in hand is recorded (``record_answer_attempt``),
+an attempt whose outcome is unknown is held (``record_unknown_attempt``) until a person says how
+it ended (``resolve_unknown``), and a review holds the attempt and the hash of what it accepted.
+Model output is a review candidate, never canon.
 """
 
 from __future__ import annotations
@@ -19,13 +22,14 @@ import os
 import re
 import secrets
 import tempfile
-from collections.abc import Callable, Mapping
+from collections.abc import Mapping
+from dataclasses import dataclass
 from datetime import UTC, datetime
 from pathlib import Path
 from typing import Any
 
 from synapse.core.packets import TaskPacket
-from synapse.runtime.contracts import RuntimeRequest, RuntimeResponse, copy_json_data
+from synapse.runtime.contracts import RuntimeRequest, copy_json_data
 
 ROOT = Path(__file__).resolve().parents[2]
 PACK_ROOT = ROOT / "domain_packs" / "_presets" / "independent"
@@ -516,16 +520,44 @@ def _latest(record: Mapping[str, Any]) -> dict | None:
     return record["attempts"][-1] if record["attempts"] else None
 
 
+KNOWN = "KNOWN"
+RESULT_UNKNOWN = "RESULT_UNKNOWN"
+
+
+def _review_holds(record: Mapping[str, Any]) -> bool:
+    """A review counts only when a person made it for the latest attempt and that response is unchanged (DEC-0245)."""
+
+    review, latest = record.get("review"), _latest(record)
+    return bool(
+        isinstance(review, Mapping)
+        and latest
+        and review.get("actor") in _REVIEWERS
+        and review.get("attempt") == latest.get("attempt")
+        and latest.get("response") is not None
+        and review.get("response_sha256") == digest(latest["response"])
+    )
+
+
+def _unknown(record: Mapping[str, Any]) -> bool:
+    latest = _latest(record)
+    return bool(latest and latest.get("outcome") == RESULT_UNKNOWN and not latest.get("resolved"))
+
+
 def accepted_result(run: Mapping[str, Any], task_id: str) -> dict | None:
-    """The reviewed response of one task, or ``None`` until a person accepted a passing attempt."""
+    """The reviewed response of one task, or ``None`` until a person accepted a passing attempt.
+
+    The review must hold the latest attempt and the sha256 of the response it accepted; a response changed
+    afterwards, a review for another attempt or one made by anyone but the operator or user is not accepted.
+    """
 
     record = _task_record(run, task_id)
     review, latest = record["review"], _latest(record)
     if (
         review
-        and review["decision"] == "ACCEPTED"
+        and review.get("decision") == "ACCEPTED"
         and latest
         and latest["validation"]["structure"] == "PASS"
+        and _review_holds(record)
     ):
         return latest["response"]
     return None
@@ -550,7 +582,9 @@ def _ensure_current(run: Mapping[str, Any]) -> tuple[dict, dict, dict]:
 
 def task_states(run: Mapping[str, Any]) -> list[dict]:
     """Per-task state for a screen: ``BLOCKED``, ``READY``, ``NEEDS_REVIEW``, ``ACCEPTED``,
-    ``ACCEPTED_UNRESOLVED`` (accepted but it blocks dependents) or ``EXHAUSTED``."""
+    ``ACCEPTED_UNRESOLVED`` (accepted but it blocks dependents), ``EXHAUSTED``, ``UNKNOWN`` (the last call's
+    outcome is unknown until a person says how it ended) or ``REVIEW_INVALID`` (an acceptance that no longer
+    holds what it accepted: a person reviews again)."""
 
     _, preset, _ = _ensure_current(run)
     states = []
@@ -559,8 +593,12 @@ def task_states(run: Mapping[str, Any]) -> list[dict]:
         latest = _latest(record)
         review = record["review"]
         accepted = accepted_result(run, task["id"])
-        if accepted is not None:
+        if _unknown(record):
+            state = "UNKNOWN"
+        elif accepted is not None:
             state = "ACCEPTED" if accepted["status"] == "PROPOSED" else "ACCEPTED_UNRESOLVED"
+        elif isinstance(review, Mapping) and review.get("decision") == "ACCEPTED":
+            state = "REVIEW_INVALID"
         elif latest and latest["validation"]["structure"] == "PASS" and review is None:
             state = "NEEDS_REVIEW"
         elif len(record["attempts"]) >= MAX_ATTEMPTS:
@@ -598,21 +636,29 @@ def prepare_task(run: Mapping[str, Any], task_id: str) -> tuple[TaskPacket, Runt
     return build_packet(run["preset_id"], task_id, run["context"], _previous_for(run, task)), None
 
 
-def run_task(
-    run: Mapping[str, Any],
-    task_id: str,
-    *,
-    model: str,
-    complete: Callable[[RuntimeRequest], RuntimeResponse | str],
-    dispatch_approved: bool,
-) -> dict:
-    """Send exactly one request for one ready task and return the updated run.
+@dataclass(frozen=True, slots=True)
+class PreparedCall:
+    """Everything one attempt needs before anything is sent: the packet, the request and its identity."""
 
-    The caller must pass ``dispatch_approved=True``. A transport error, truncation or malformed
-    answer is recorded as a failed attempt and is not retried here.
-    """
+    task_id: str
+    attempt: int
+    packet: TaskPacket
+    request: RuntimeRequest
+    previous: tuple[dict, ...]
 
-    require(dispatch_approved is True, "model dispatch needs explicit approval")
+    @property
+    def request_sha256(self) -> str:
+        return digest(
+            {
+                "messages": [dict(m) for m in self.request.messages],
+                "schema": dict(self.request.response_schema or {}),
+            }
+        )
+
+
+def prepare_call(run: Mapping[str, Any], task_id: str, *, model: str) -> PreparedCall:
+    """The next attempt of one READY task; nothing is called or recorded."""
+
     require(text(model), "model is required")
     _common, preset, current = _ensure_current(run)
     task = task_for(preset, task_id)
@@ -630,20 +676,39 @@ def run_task(
         model=model.strip(),
         request_id=f"preset-run:{run['run_id']}:{task_id}:{attempt_number}",
     )
-    expected = dict(packet.to_record()["preset_binding"])
-    raw_text, finish_reason, transport_error = "", None, None
-    try:
-        reply = complete(request)
-        if isinstance(reply, RuntimeResponse):
-            raw_text, finish_reason = reply.text, getattr(reply, "finish_reason", None)
-        else:
-            raw_text = str(reply)
-    except Exception as exc:  # noqa: BLE001 - transport failures become a recorded attempt
-        transport_error = f"{type(exc).__name__}: {exc}"
+    return PreparedCall(task_id, attempt_number, packet, request, tuple(previous))
+
+
+def _with_attempt(run: Mapping[str, Any], call: PreparedCall, entry: dict) -> dict:
+    updated = copy.deepcopy(dict(run))
+    record = _task_record(updated, call.task_id)
+    require(len(record["attempts"]) + 1 == call.attempt, "the run changed since this attempt was prepared")
+    record["attempts"].append(entry)
+    record["review"] = None
+    return updated
+
+
+def record_answer_attempt(
+    run: Mapping[str, Any],
+    task_id: str,
+    *,
+    model: str,
+    answer_text: str,
+    finish_reason: str | None = None,
+    call: PreparedCall | None = None,
+) -> dict:
+    """Record one attempt from an answer already in hand and return the updated run; nothing is called.
+
+    A truncated or malformed answer is recorded as a failed attempt. ``call`` is the attempt the answer came back
+    for (``preset_dispatch``); without it the next attempt is prepared here (an answer a host AI wrote).
+    """
+
+    call = call or prepare_call(run, task_id, model=model)
+    require(call.task_id == task_id, "attempt belongs to another task")
+    expected = dict(call.packet.to_record()["preset_binding"])
     response, validation = None, {"structure": "FAIL"}
-    if transport_error is not None:
-        validation["error"] = f"transport error: {transport_error}"
-    elif finish_reason not in (None, "stop"):
+    raw_text = answer_text if isinstance(answer_text, str) else str(answer_text)
+    if finish_reason not in (None, "stop"):
         validation["error"] = f"incomplete answer: finish_reason={finish_reason}"
     else:
         try:
@@ -653,36 +718,79 @@ def run_task(
                 preset_id=run["preset_id"],
                 task_id=task_id,
                 context=run["context"],
-                previous=previous,
+                previous=list(call.previous),
             )
             response = candidate
         except PresetPipelineError as exc:
             validation["error"] = str(exc)
-    updated = copy.deepcopy(dict(run))
-    _task_record(updated, task_id)["attempts"].append(
+    return _with_attempt(
+        run,
+        call,
         {
-            "attempt": attempt_number,
+            "attempt": call.attempt,
             "model": model.strip(),
-            "request_id": request.request_id,
-            "request_sha256": digest(
-                {
-                    "messages": [dict(m) for m in request.messages],
-                    "schema": dict(request.response_schema or {}),
-                }
-            ),
+            "request_id": call.request.request_id,
+            "request_sha256": call.request_sha256,
             "finish_reason": finish_reason,
             "raw_text": raw_text[:MAX_RAW_TEXT],
             "response": response,
             "validation": validation,
+            "outcome": KNOWN,
             "at": _now(),
-        }
+        },
     )
-    _task_record(updated, task_id)["review"] = None
+
+
+def record_unknown_attempt(run: Mapping[str, Any], call: PreparedCall, *, model: str, reason: str) -> dict:
+    """Hold an attempt whose call may or may not have happened: no next attempt until a person resolves it."""
+
+    return _with_attempt(
+        run,
+        call,
+        {
+            "attempt": call.attempt,
+            "model": model.strip(),
+            "request_id": call.request.request_id,
+            "request_sha256": call.request_sha256,
+            "finish_reason": None,
+            "raw_text": "",
+            "response": None,
+            "validation": {"structure": "FAIL", "error": f"result unknown: {reason}"},
+            "outcome": RESULT_UNKNOWN,
+            "at": _now(),
+        },
+    )
+
+
+def resolve_unknown(
+    run: Mapping[str, Any], task_id: str, *, actor: str, note: str = "", channel: str | None = None
+) -> dict:
+    """A person says the unknown attempt ended without an answer to use; it counts as a failed attempt."""
+
+    require(actor in _REVIEWERS, "only the operator or user resolves an unknown result")
+    require(isinstance(note, str) and len(note) <= 2000, "note must be text up to 2000 characters")
+    _ensure_current(run)
+    require(_unknown(_task_record(run, task_id)), "no unknown result to resolve")
+    updated = copy.deepcopy(dict(run))
+    _latest(_task_record(updated, task_id))["resolved"] = {
+        "as": "no_answer",
+        "actor": actor,
+        "note": note.strip(),
+        "at": _now(),
+        **({"channel": channel} if channel else {}),
+    }
     return updated
 
 
 def review_task(
-    run: Mapping[str, Any], task_id: str, *, decision: str, actor: str, note: str = ""
+    run: Mapping[str, Any],
+    task_id: str,
+    *,
+    decision: str,
+    actor: str,
+    note: str = "",
+    words: str = "",
+    channel: str | None = None,
 ) -> dict:
     """A person accepts or rejects the latest attempt. Acceptance needs a structurally passing one."""
 
@@ -693,7 +801,11 @@ def review_task(
     record = _task_record(run, task_id)
     latest = _latest(record)
     require(latest is not None, "no attempt to review")
-    require(record["review"] is None, "this attempt was already reviewed")
+    require(not _unknown(record), "the last call's outcome is unknown; resolve it first")
+    reviewable = record["review"] is None or (
+        record["review"].get("decision") == "ACCEPTED" and not _review_holds(record)
+    )
+    require(reviewable, "this attempt was already reviewed")
     if decision == "ACCEPTED":
         require(
             latest["validation"]["structure"] == "PASS", "only a passing attempt can be accepted"
@@ -703,8 +815,13 @@ def review_task(
         "decision": decision,
         "actor": actor,
         "attempt": latest["attempt"],
+        # DEC-0245: the review holds what it accepted; a changed response no longer counts as accepted.
+        "response_sha256": digest(latest["response"]) if latest.get("response") is not None else None,
         "note": note.strip(),
         "at": _now(),
+        **({"words": words.strip()} if isinstance(words, str) and words.strip() else {}),
+        # DEC-0246: how the person reviewed (``screen+code`` from the console); left out by in-process callers.
+        **({"channel": channel} if channel else {}),
     }
     return updated
 

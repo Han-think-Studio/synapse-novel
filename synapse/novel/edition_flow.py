@@ -215,6 +215,17 @@ def _receipt_path(project: Path, scene: str, beat: int) -> Path:
     return _novel(project) / "receipts" / f"{scene}-{beat}.json"
 
 
+def _receipt_lockable(path: Path) -> bool | None:
+    """Whether a beat's last check passed; ``None`` when its receipt cannot be read."""
+
+    try:
+        check = _read_json(path).get("check")
+    except FlowError:
+        return None
+    lockable = check.get("lockable") if isinstance(check, Mapping) else None
+    return lockable if isinstance(lockable, bool) else None
+
+
 def _events(project: Path) -> list[dict[str, Any]]:
     try:
         return read_artifacts(_events_path(project))
@@ -840,7 +851,8 @@ def _status(project: Path) -> dict[str, Any]:
         scene_id = scene["id"]
         for number, _beat_value in enumerate(scene["beats"], start=1):
             requested = _request_path(project, scene_id, number).is_file()
-            checked = _receipt_path(project, scene_id, number).is_file()
+            receipt = _receipt_path(project, scene_id, number)
+            checked = receipt.is_file()
             latest = _latest_lock(project, scene_id, number)
             reason = (
                 _lock_stale_reason(project, scene_id, number, latest, payload, plan_hash, current)
@@ -856,6 +868,8 @@ def _status(project: Path) -> dict[str, Any]:
                     "beat": number,
                     "requested": requested,
                     "checked": checked,
+                    # A failed check leaves a receipt too; whether it passed keeps a reading at "check" (DEC-0250).
+                    "lockable": _receipt_lockable(receipt) if checked else None,
                     "locked": latest is not None and not is_stale,
                     "stale": is_stale,
                     **({"stale_reason": reason} if reason else {}),

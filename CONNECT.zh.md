@@ -90,8 +90,8 @@ env = { SYNAPSE_NOVEL_ROOT = "<novel-root>" }
 | `synapse_novel_seed` | 从注册文件夹内的种子文件创建小说项目并提出正典值；不会确认任何值。 |
 | `synapse_novel_import` | 将注册文件夹内各章 `.txt`、`.md` 或 `.docx` 导入项目快照，不修改源文件夹。章号按自然文件名顺序分配，而不是取文件名数字；`10.md` 可能是第 4 章。 |
 | `synapse_novel_audit` | 对照已确认的正典检查所有导入场景，并报告冲突、可能冲突和 `unchecked` 值；不会确认值或批准手稿。 |
-| `synapse_novel_plan` | 验证小说场景计划；只有没有问题时才保存。确认计划仅限终端。 |
-| `synapse_novel_beat` | 为下一个可请求的小说节拍生成并记录写作请求，其中包含已确认的正典块。Synapse 不调用模型；锁定节拍仅限终端。 |
+| `synapse_novel_plan` | 验证小说场景计划；只有没有问题时才保存。确认计划不能通过 MCP 完成：在终端，或在本地界面输入确认码。 |
+| `synapse_novel_beat` | 为下一个可请求的小说节拍生成并记录写作请求，其中包含已确认的正典块。Synapse 不调用模型；锁定节拍不能通过 MCP 完成：在终端，或在本地界面输入确认码。 |
 | `synapse_novel_check` | 对照已确认的正典和计划中的行动者检查一拍的内联文本，并记录检查结果；它不会锁定节拍。 |
 | `synapse_novel_status` | 读取小说计划以及每拍的已请求、已检查、已锁定和 stale 状态。 |
 

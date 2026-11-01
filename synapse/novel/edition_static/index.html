@@ -1,0 +1,64 @@
+<!doctype html>
+<html lang="ko">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Synapse 소설</title>
+  <link rel="stylesheet" href="style.css">
+</head>
+<body>
+  <header>
+    <p class="eyebrow">SYNAPSE NOVEL · LOCAL</p>
+    <h1>소설 쓰기</h1>
+    <p id="project" class="muted"></p>
+    <nav id="flow-steps" class="flow-steps" aria-label="진행 단계"></nav>
+  </header>
+  <main>
+    <p id="error" class="error" role="alert" aria-live="assertive"></p>
+
+    <section class="panel" data-steps="seed">
+      <h2>씨앗과 정본 값</h2>
+      <p class="muted">어시스턴트가 만든 씨앗 JSON을 붙여 넣고 저장하세요. 제안된 정본 값은 하나씩 확인해 확정합니다. 확정은 셸 창에 찍힌 코드로 합니다.</p>
+      <textarea id="seed-json" rows="6" spellcheck="false" placeholder='{"title": "...", ...}'></textarea>
+      <button id="save-seed" class="primary" type="button">씨앗 저장</button>
+      <div id="values"></div>
+    </section>
+
+    <section class="panel" data-steps="plan plan-confirm">
+      <h2>계획</h2>
+      <p class="muted">장면과 비트 계획 JSON을 붙여 넣고 저장한 뒤, 읽어 보고 확정하세요.</p>
+      <textarea id="plan-json" rows="6" spellcheck="false" placeholder='{"scenes": [...]}'></textarea>
+      <div class="button-row">
+        <button id="save-plan" class="primary" type="button">계획 저장</button>
+        <button id="confirm-plan" class="secondary" type="button">계획 확정</button>
+      </div>
+      <pre id="plan-view" class="result" hidden></pre>
+    </section>
+
+    <section class="panel" data-steps="beat check lock">
+      <h2>비트 쓰기 · 검사 · 잠금</h2>
+      <div class="inline">
+        <label>장면 <input id="scene" value="" placeholder="예: ch1s1"></label>
+        <label>박자 <input id="beat" type="number" min="1" value="1"></label>
+      </div>
+      <button id="request-beat" class="secondary" type="button">비트 요청 보기</button>
+      <p class="muted">아래 요청을 어시스턴트에게 그대로 주고, 받은 본문을 붙여 넣어 검사하세요.</p>
+      <pre id="beat-request" class="result" hidden></pre>
+      <textarea id="beat-text" rows="8" placeholder="어시스턴트가 쓴 비트 본문"></textarea>
+      <div class="button-row">
+        <button id="check-beat" class="primary" type="button">검사</button>
+        <button id="lock-beat" class="secondary" type="button">잠금</button>
+      </div>
+      <pre id="check-view" class="result" hidden></pre>
+    </section>
+
+    <section class="panel" data-steps="assemble">
+      <h2>조립</h2>
+      <p class="muted">잠근 비트를 순서대로 모아 새 파일 하나를 만듭니다. 있는 파일은 덮어쓰지 않습니다.</p>
+      <button id="assemble" class="primary" type="button">이 장면 조립</button>
+      <p id="assembled" class="muted"></p>
+    </section>
+  </main>
+  <script src="app.js"></script>
+</body>
+</html>

@@ -28,3 +28,10 @@ editions:
   - synapse/novel/scratch_seed.py
   - synapse/novel/units.py
   - synapse/novel/structure_templates.json
+  - synapse/novel/workspace.py
+  - synapse/novel/edition_app.py
+  - synapse/novel/flow_steps.py
+  - synapse/novel/edition_static/index.html
+  - synapse/novel/edition_static/app.js
+  - synapse/novel/edition_static/style.css
+  workspace: synapse.novel.workspace

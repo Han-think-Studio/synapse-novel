@@ -15,6 +15,7 @@ dependencies = [
 
 [project.scripts]
 synapse-novel = "synapse.novel.edition_cli:main"
+synapse-novel-screen = "synapse.core.shell_server:main"
 
 [tool.setuptools.packages.find]
 include = ["synapse*"]

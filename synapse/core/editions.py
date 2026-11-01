@@ -15,6 +15,7 @@ _REGISTRY_PATH = Path("editions") / "editions.yaml"
 _CATALOG_PATH = Path("domain_packs") / "_presets" / "independent" / "catalog.json"
 _ID = re.compile(r"^[a-z][a-z0-9_]*$")
 _STATUSES = frozenset({"published", "planned", "later"})
+_MODULE = re.compile(r"^[a-z][a-z0-9_]*(\.[a-z][a-z0-9_]*)+$")
 
 
 @dataclass(frozen=True, slots=True)
@@ -28,6 +29,7 @@ class Edition:
     repository: str | None
     presets: tuple[str, ...]
     ships: tuple[str, ...]
+    workspace: str | None = None
 
     def to_record(self) -> dict[str, Any]:
         return {
@@ -38,6 +40,7 @@ class Edition:
             **({"repository": self.repository} if self.repository is not None else {}),
             "presets": list(self.presets),
             "ships": list(self.ships),
+            **({"workspace": self.workspace} if self.workspace is not None else {}),
         }
 
 
@@ -122,7 +125,15 @@ def load_editions(root: str | Path | None = None) -> tuple[Edition, ...]:
         if overlap:
             raise ValueError(f"edition module is listed more than once: {sorted(overlap)}")
         seen_modules.update(ships)
-        editions.append(Edition(edition_id, name.strip(), status, source, repository, presets, ships))
+        workspace = entry.get("workspace")
+        if workspace is not None and (
+            not isinstance(workspace, str)
+            or not _MODULE.fullmatch(workspace)
+            or not workspace.startswith(f"synapse.{edition_id}.")
+        ):
+            # DEC-0242: an edition brings its workspace from its own package, never another's.
+            raise ValueError(f"edition {edition_id} workspace must be a module inside synapse.{edition_id}")
+        editions.append(Edition(edition_id, name.strip(), status, source, repository, presets, ships, workspace))
     return tuple(editions)
 
 

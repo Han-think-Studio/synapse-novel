@@ -282,11 +282,9 @@ def tool_submit_answer(arguments: dict[str, Any]) -> Any:
     host = arguments.get("host_model")
     label = f"host-ai:{host.strip()[:60]}" if isinstance(host, str) and host.strip() else "host-ai"
     task_id = _need(arguments, "task_id", str)
-    # Nothing is dispatched: the host AI already produced the text, so approval to "send a request"
-    # has nothing to cover. The run record still counts the attempt and still bounds them.
-    updated = pp.run_task(
-        run, task_id, model=label, complete=lambda _request: answer, dispatch_approved=True
-    )
+    # Nothing is dispatched: the host AI already produced the text, so it is recorded as an answer in
+    # hand (DEC-0245). The run record still counts the attempt and still bounds them.
+    updated = pp.record_answer_attempt(run, task_id, model=label, answer_text=answer)
     pp.save_run(folder, updated)
     attempt = pp.task_states(updated)
     latest = next(s for s in attempt if s["task_id"] == task_id)
