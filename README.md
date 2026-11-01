@@ -8,7 +8,7 @@ Synapse Novel is a public writing edition for planning and checking a novel one 
 
 The [connection guide](CONNECT.md) explains Linux and Windows MCP setup. The [edition guide](editions/novel/README.md) covers the CLI. Python 3.12 and PyYAML are required.
 
-The novel CLI commands are ten: `import`, `audit`, `seed`, `plan`, `plan-confirm`, `beat`, `check`, `lock`, `status`, and `assemble`. Run `python editions/novel/synapse_novel.py novel --help` to see them.
+The novel CLI commands are eleven: `import`, `audit`, `seed`, `plan`, `plan-confirm`, `beat`, `check`, `lock`, `unlock`, `status`, and `assemble`. Run `python editions/novel/synapse_novel.py novel --help` to see them.
 
 ### Write on the screen
 
@@ -26,7 +26,7 @@ If you want an assistant to propose values from claims, `synapse_value_propose` 
 
 ## The seven novel tools
 
-The local MCP server lists these first: `synapse_novel_seed`, `synapse_novel_plan`, `synapse_novel_beat`, `synapse_novel_check`, `synapse_novel_status`, `synapse_novel_import`, and `synapse_novel_audit`. Manuscript import and audit do not confirm canon values or lock anything. Plan confirmation, canon confirmation and beat locking are a person's actions: at a terminal with the CLI, or on the local screen with the code printed in its own window. Scene assembly runs from the CLI or the screen. None of them goes over MCP. The server, the CLI and the screen make no model call and no outside network call.
+The local MCP server lists these first: `synapse_novel_seed`, `synapse_novel_plan`, `synapse_novel_beat`, `synapse_novel_check`, `synapse_novel_status`, `synapse_novel_import`, and `synapse_novel_audit`. Manuscript import and audit do not confirm canon values or lock anything. Plan confirmation, canon confirmation and beat locking are a person's actions: at a terminal with the CLI, or on the local screen with the code printed in its own window. A locked beat is never overwritten: checking it again is refused until a person runs `novel unlock` at a terminal, which keeps the locked text in `novel/beats/archive/`. A preset review is a person's confirmation too: `synapse_record_review` records nothing and only returns the `synapse_novel.py review` command the person runs at a terminal. Scene assembly runs from the CLI or the screen. None of them goes over MCP. The server, the CLI and the screen make no model call and no outside network call.
 
 For preset and canon work, the package also includes the tools documented in the [connection guide](CONNECT.md). This release contains two preset definitions: `novel_upload_review` and `novel_philosophy_depth`.
 

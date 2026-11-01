@@ -109,7 +109,7 @@ MCP 没有确认值、确认计划、锁定节拍或合成场景的工具；这�
 | `synapse_new_run` | 为选定的预设开始一次运行，并将其保存为 `runs_folder` 中的一个 JSON 文件。 |
 | `synapse_get_task` | 返回一个 READY 任务的 packet，以及答案必须采用的准确 JSON 结构。不调用模型。 |
 | `synapse_submit_answer` | 严格验证 AI 返回的四键 JSON 并记录一次尝试（最多三次）。通过的答案在创作者接受前只是候选。 |
-| `synapse_record_review` | 仅在创作者表示接受或拒绝后，记录其决定和 `person_said` 中的原话。工具不会代替创作者决定。 |
+| `synapse_record_review` | 不记录任何内容：预设审阅是本人的确认。创作者表示接受或拒绝后（在 `person_said` 中引用其原话），返回其需在终端运行的 `synapse_novel.py review` 命令。工具不会代替创作者决定。 |
 | `synapse_run_status` | 读取一次运行或文件夹中所有运行的任务状态。 |
 | `synapse_report` | 生成只包含创作者已接受结果的纯文本报告；未审阅的输出不会进入报告。 |
 | `synapse_plan` | 展示从想法和预设确定性推导出的文件布局。不调用模型，也不写文件。 |

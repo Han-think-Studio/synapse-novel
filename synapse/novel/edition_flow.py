@@ -308,15 +308,31 @@ def _load_request(project: Path, scene: str, beat: int) -> dict[str, Any]:
 
 
 def _latest_lock(project: Path, scene: str, beat: int) -> dict[str, Any] | None:
-    found = [
-        item
-        for item in _events(project)
-        if item.get("kind") == "beat_locked"
-        and isinstance(item.get("payload"), Mapping)
-        and item["payload"].get("scene") == scene
-        and item["payload"].get("beat") == beat
-    ]
-    return found[-1] if found else None
+    """The beat's lock that still stands: the last ``beat_locked`` not followed by a person's ``beat_unlocked``."""
+
+    current = None
+    for item in _events(project):
+        payload = item.get("payload")
+        if not isinstance(payload, Mapping) or payload.get("scene") != scene or payload.get("beat") != beat:
+            continue
+        if item.get("kind") == "beat_locked":
+            current = item
+        elif item.get("kind") == "beat_unlocked":
+            current = None
+    return current
+
+
+def _archive_beat_text(project: Path, scene: str, beat: int) -> str | None:
+    """Keep the beat's saved text under ``beats/archive/`` (named by its hash) before anything replaces it."""
+
+    beat_file = _beat_path(project, scene, beat)
+    if not beat_file.is_file():
+        return None
+    data = beat_file.read_bytes()
+    target = _novel(project) / "beats" / "archive" / f"{scene}-{beat}-{_hash_bytes(data)[:16]}.txt"
+    if not target.is_file():
+        _write_bytes(target, data, overwrite=False)
+    return str(target)
 
 
 def _load_live_state(project: Path):
@@ -763,7 +779,19 @@ def check_beat(project: str | Path, scene: str, beat: int, text: str, *, now: st
         # text file does not change its fingerprint merely by being checked.
         text = text.replace("\r\n", "\n").replace("\r", "\n")
     root = _root(project)
+    latest = _latest_lock(root, scene, beat)
+    if latest is not None:
+        payload, plan_hash, current = _plan_payload(root)
+        if _lock_stale_reason(root, scene, beat, latest, payload, plan_hash, current) is None:
+            # A person locked this text; checking again would replace it (governance survey E1, DEC-0256).
+            raise FlowError(
+                canon_values_cli.NOT_DONE,
+                "이 박자는 사람이 잠갔습니다. 잠근 본문은 덮어쓰지 않습니다. 고치려면 터미널에서 "
+                f"`novel unlock --project ... --scene {scene} --beat {beat}`으로 잠금을 푼 뒤 다시 검사하세요.",
+            )
     result = _evaluate_text(root, scene, beat, text, now=now)
+    if latest is not None:
+        _archive_beat_text(root, scene, beat)
     _write_bytes(_beat_path(root, scene, beat), text.encode("utf-8"), overwrite=True)
     _write_json(_receipt_path(root, scene, beat), {"schema": CHECK_SCHEMA, "check": result}, overwrite=True)
     return result
@@ -902,6 +930,27 @@ def status(project: str | Path) -> dict[str, Any]:
     return result
 
 
+def _unlock_beat(project: str | Path, scene: str, beat: int, *, words: str, now: str) -> dict[str, Any]:
+    """Take back a person's lock, keeping the locked text in ``beats/archive/`` (DEC-0256)."""
+
+    root = _root(project)
+    latest = _latest_lock(root, scene, beat)
+    if latest is None:
+        raise FlowError(canon_values_cli.NOT_DONE, "이 박자에는 풀 잠금이 없습니다.")
+    record = latest.get("payload") if isinstance(latest.get("payload"), Mapping) else {}
+    payload = {
+        "scene": scene,
+        "beat": beat,
+        "lock_artifact": latest.get("artifact_id"),
+        "text_sha256": record.get("text_sha256"),
+        "archived_file": _archive_beat_text(root, scene, beat),
+        "words": words,
+        "unlocked_at": now,
+    }
+    event = _append_event(root, "beat_unlocked", payload)
+    return {"unlocked": payload, "artifact_id": event["artifact_id"]}
+
+
 def _lock_beat(project: str | Path, scene: str, beat: int, *, words: str, now: str) -> dict[str, Any]:
     root = _root(project)
     payload, plan_hash, current, _seed, _store, _checked = _load_live_state(root)
@@ -1030,6 +1079,12 @@ def _dispatch(args: argparse.Namespace, *, ask: Callable[[], str], interactive: 
         result = check_beat(args.project, args.scene, args.beat, text, now=now())
         display = {key: value for key, value in result.items() if key != "receipt"}
         return (canon_values_cli.DONE if result["lockable"] else canon_values_cli.NOT_DONE), display
+    if args.command == "unlock":
+        if not interactive():
+            raise FlowError(canon_values_cli.CANNOT_RUN, "박자 잠금을 푸는 일은 사람의 터미널에서 해야 합니다.")
+        out = lambda message: print(message, file=sys.stderr, flush=True)
+        words = canon_values_cli._words(ask, out, "잠금을 풀려면 본인 말로 한 줄 확인해 주세요:")
+        return canon_values_cli.DONE, _unlock_beat(args.project, args.scene, args.beat, words=words, now=now())
     if args.command == "lock":
         if not interactive():
             raise FlowError(canon_values_cli.CANNOT_RUN, "박자 잠금은 사람의 터미널에서 해야 합니다.")
@@ -1152,6 +1207,10 @@ def main(
     lock.add_argument("--project", type=Path, required=True)
     lock.add_argument("--scene", required=True)
     lock.add_argument("--beat", type=int, required=True)
+    unlock = commands.add_parser("unlock", help="take back one beat's lock at a terminal, keeping its text")
+    unlock.add_argument("--project", type=Path, required=True)
+    unlock.add_argument("--scene", required=True)
+    unlock.add_argument("--beat", type=int, required=True)
     state = commands.add_parser("status", help="read plan and per-beat requested, checked, locked, and stale state")
     state.add_argument("--project", type=Path, required=True)
     assemble = commands.add_parser("assemble", help="assemble a scene after every beat is locked and current")

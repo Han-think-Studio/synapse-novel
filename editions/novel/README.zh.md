@@ -22,7 +22,7 @@
 | `novel status --project P` | 读取计划和每拍的已请求、已检查、已锁定及 stale 状态。 |
 | `novel assemble --project P --scene S --out O` | 只有所有节拍都最新且已锁定时才按顺序合成场景。输出路径必须是新路径。 |
 
-运行 `python editions/novel/synapse_novel.py novel --help` 查看十个 `novel` 流程命令：`import`、`audit`、`seed`、`plan`、`plan-confirm`、`beat`、`check`、`lock`、`status` 和 `assemble`。单独的 `canon values confirm` 不计入这十个命令。退出码 `0` 表示完成，`1` 表示尚有问题：发现结果带有 `next_step` 且不带 `error`，拒绝锁定时会说明原因；`2` 表示命令无法运行。面向创作者的消息和错误文本使用韩语。JSON 字段名是固定契约键，请保持原样。
+运行 `python editions/novel/synapse_novel.py novel --help` 查看十一个 `novel` 流程命令：`import`、`audit`、`seed`、`plan`、`plan-confirm`、`beat`、`check`、`lock`、`unlock`、`status` 和 `assemble`。单独的 `canon values confirm` 不计入这十一个命令。退出码 `0` 表示完成，`1` 表示尚有问题：发现结果带有 `next_step` 且不带 `error`，拒绝锁定时会说明原因；`2` 表示命令无法运行。面向创作者的消息和错误文本使用韩语。JSON 字段名是固定契约键，请保持原样。
 
 `not_examined` 表示会阻止锁定的原文`未审阅`状态。请先审阅所需来源，再重新检查该拍。`unchecked` 表示检查器不会与正文进行比对的正典值。`requirement` 值永不对照文本，因此会使 `complete` 保持 false；即使正文没有冲突，`canon values check` 也可能以退出码 `1` 结束。这表示检查未完成，不表示正文有冲突。它不会阻止节拍锁定；终端锁定时会显示该值并连同创作者的话一起记录。确定冲突、缺少计划行动者、正典上下文不匹配或当前计划未确认都会阻止锁定。可能冲突和质量建议不会阻止锁定。质量只是建议，不是批准。
 

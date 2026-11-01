@@ -109,7 +109,7 @@ AI 없이 시작하려면 [씨앗 카드 예시](editions/novel/examples/novel/s
 | `synapse_new_run` | 선택한 프리셋의 실행을 시작하고 `runs_folder`에 JSON 파일 하나로 저장합니다. |
 | `synapse_get_task` | READY 상태인 작업 하나의 packet과 답변에 필요한 정확한 JSON 형식을 반환합니다. 모델은 호출하지 않습니다. |
 | `synapse_submit_answer` | AI의 네 키 JSON 답을 검증하고 최대 세 번의 시도 중 하나로 기록합니다. 통과한 답도 사람이 수락하기 전에는 후보입니다. |
-| `synapse_record_review` | 사람이 수락 또는 거절을 말한 뒤에만 결정과 `person_said`에 담은 사람의 실제 표현을 기록합니다. 도구가 대신 결정하지 않습니다. |
+| `synapse_record_review` | 아무것도 기록하지 않습니다. 프리셋 검토는 사람의 확정입니다. 사람이 수락 또는 거절을 말하면(`person_said`에 그 말을 담음), 사람이 터미널에서 실행할 `synapse_novel.py review` 명령을 돌려줍니다. 도구가 대신 결정하지 않습니다. |
 | `synapse_run_status` | 실행 하나 또는 폴더의 모든 실행에 대한 작업 상태를 읽습니다. |
 | `synapse_report` | 사람이 수락한 결과만 담은 일반 텍스트 보고서를 만듭니다. 검토 전 출력은 포함하지 않습니다. |
 | `synapse_plan` | 아이디어와 프리셋으로 결정적으로 정해지는 파일 배치를 보여 줍니다. 모델을 호출하지 않고 쓰기도 하지 않습니다. |

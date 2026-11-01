@@ -572,6 +572,63 @@ def _canon(args: argparse.Namespace) -> int:
     return run(args.canon_args)
 
 
+class ReviewRefused(ValueError):
+    """A preset review that was not made by a person at a terminal; nothing was recorded."""
+
+
+def review_at_terminal(
+    folder: Path,
+    run_id: str,
+    task_id: str,
+    decision: str,
+    *,
+    source_root: str | None = None,
+    ask: Any = input,
+    interactive: Any = None,
+    out: Any = None,
+) -> dict[str, Any]:
+    """A person accepts or rejects a preset task's latest answer, in their own words, at a terminal (DEC-0256).
+
+    A preset review is a confirmation: it is never made over MCP or through a pipe.
+    """
+
+    _core(source_root)
+    from synapse.core import canon_values_cli
+    from synapse.core import preset_pipeline as pp
+
+    say = out or (lambda line: print(line, file=sys.stderr))
+    if not (interactive or canon_values_cli.at_a_terminal)():
+        raise ReviewRefused(
+            "프리셋 검토는 사람이 터미널에서만 확정합니다(DEC-0256). MCP나 파이프로는 하지 않습니다."
+        )
+    run = pp.load_run(folder, run_id)
+    state = next((item for item in pp.task_states(run) if item["task_id"] == task_id), None)
+    if state is None:
+        raise ReviewRefused(f"작업 {task_id}이(가) 이 실행에 없습니다.")
+    say(f"프리셋 실행 {run_id} · 작업 {task_id} · 지금 상태 {state['state']} → {decision}")
+    try:
+        words = canon_values_cli._words(ask, say, "확정하려면 본인 말로 한 줄 적어 주세요:")
+    except canon_values_cli.NotDone as exc:
+        raise ReviewRefused(str(exc)) from exc
+    updated = pp.review_task(
+        run, task_id, decision=decision.upper(), actor="user", words=words, channel="terminal"
+    )
+    pp.save_run(folder, updated)
+    return {"reviewed": task_id, "decision": decision.upper(), "tasks": pp.task_states(updated)}
+
+
+def _review(args: argparse.Namespace) -> int:
+    try:
+        result = review_at_terminal(
+            args.runs_folder.expanduser(), args.run_id, args.task_id, args.decision, source_root=args.source_root
+        )
+    except ReviewRefused as exc:
+        print("synapse-novel: " + str(exc), file=sys.stderr)
+        return 3
+    print(json.dumps(result, ensure_ascii=False, indent=2))
+    return 0
+
+
 def _impact(args: argparse.Namespace) -> int:
     """Which files a change reaches. Reads; the same answer the MCP tool gives, with no assistant in between."""
 
@@ -741,6 +798,15 @@ def main() -> int:
         help="that command's own arguments; run `python -m synapse.core.canon_gate --help` (or canon_apply, canon_values_cli) to list them",
     )
 
+    review_parser = subparsers.add_parser(
+        "review",
+        help="a person accepts or rejects a preset task's latest answer, at a terminal only (never over MCP)",
+    )
+    review_parser.add_argument("run_id", help="the run id (preset-<run_id>.json)")
+    review_parser.add_argument("task_id", help="the task to review")
+    review_parser.add_argument("decision", choices=("accepted", "rejected"))
+    review_parser.add_argument("--runs-folder", type=Path, required=True, help="the folder holding the run file")
+
     for name, text in (
         ("setup", "register the novel edition with Claude Code and/or Codex (shows a plan first)"),
         ("doctor", "check, read only, that the registration and the skill copy are in place"),
@@ -763,6 +829,8 @@ def main() -> int:
             return _canon(args)
         if args.command == "impact":
             return _impact(args)
+        if args.command == "review":
+            return _review(args)
         _print_preflight(args)
         root, plan, _ = _build_plan(args)
         if args.command == "plan":

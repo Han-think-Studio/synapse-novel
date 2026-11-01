@@ -304,8 +304,16 @@ def tool_submit_answer(arguments: dict[str, Any]) -> Any:
 
 
 def tool_record_review(arguments: dict[str, Any]) -> Any:
+    """A preset review is the person's confirmation (DEC-0256): it is never recorded over MCP.
+
+    The tool checks the request and returns the one command the person runs at a terminal to accept or reject,
+    with their own words there. The run file is not touched.
+    """
+
     pp = _core()["pp"]
     decision = _need(arguments, "decision", str)
+    if decision not in {"ACCEPTED", "REJECTED"}:
+        raise ToolError("`decision` must be ACCEPTED or REJECTED.")
     words = _need(arguments, "person_said", str).strip()
     if len(words) < MIN_USER_WORDS or len(words) > MAX_USER_WORDS:
         raise ToolError(
@@ -313,13 +321,26 @@ def tool_record_review(arguments: dict[str, Any]) -> Any:
         )
     folder = _folder(arguments)
     run_id = _need(arguments, "run_id", str)
+    task_id = _need(arguments, "task_id", str)
     run = _load_run(pp, folder, run_id)
-    note = f"recorded by the host AI from the person's words: {words}"
-    updated = pp.review_task(
-        run, _need(arguments, "task_id", str), decision=decision, actor="user", note=note[:2000]
-    )
-    pp.save_run(folder, updated)
-    return _run_summary(pp, updated)
+    state = next((item for item in pp.task_states(run) if item["task_id"] == task_id), None)
+    if state is None:
+        raise ToolError(f"unknown task: {task_id}")
+    return {
+        "recorded": False,
+        "needs_person": True,
+        "decision": decision,
+        "person_said": words,
+        "task": state,
+        "confirm_at_terminal": (
+            f'python editions/novel/synapse_novel.py review {run_id} {task_id} {decision.lower()} '
+            f'--runs-folder "{folder}"'
+        ),
+        "next": (
+            "show the person this command; a preset review is their confirmation, made at a terminal "
+            "in their own words, never over MCP (DEC-0256)"
+        ),
+    }
 
 
 def tool_run_status(arguments: dict[str, Any]) -> Any:
@@ -1055,7 +1076,7 @@ TOOLS: dict[str, dict[str, Any]] = {
         "readOnly": False,
     },
     "synapse_record_review": {
-        "description": "Record the PERSON's decision on the latest attempt. Call it only after the person said accept or reject, and quote their words in person_said. Never decide for them.",
+        "description": "Does NOT record the decision: a preset review is the PERSON's confirmation and is made at a terminal, never over MCP. After the person said accept or reject (quote their words in person_said), this returns the exact terminal command for them to run. Never decide for them.",
         "inputSchema": _schema(
             {
                 "run_id": _STR,
@@ -1067,7 +1088,7 @@ TOOLS: dict[str, dict[str, Any]] = {
             ["run_id", "task_id", "decision", "person_said", "runs_folder"],
         ),
         "handler": tool_record_review,
-        "readOnly": False,
+        "readOnly": True,  # DEC-0256: it returns the person's terminal command and writes nothing
     },
     "synapse_run_status": {
         "description": "Task states of one run (BLOCKED, READY, NEEDS_REVIEW, ACCEPTED, ACCEPTED_UNRESOLVED, EXHAUSTED), or every run in the folder.",

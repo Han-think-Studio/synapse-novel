@@ -109,7 +109,7 @@ This release includes two preset definitions: `novel_upload_review` and `novel_p
 | `synapse_new_run` | Start a run for one chosen preset and save it as one JSON file in `runs_folder`. |
 | `synapse_get_task` | Return the task packet for one READY task, including the exact JSON shape to answer in. Calls no model. |
 | `synapse_submit_answer` | Hand back the four-key JSON answer for a task. Python validates it strictly and records one attempt (at most three). A pass is only a candidate until the person accepts it. |
-| `synapse_record_review` | Record the person's decision on the latest attempt, only after the person said accept or reject; quote their words in `person_said`. Never decide for them. |
+| `synapse_record_review` | Records nothing: a preset review is the person's confirmation. After the person said accept or reject (quote their words in `person_said`), it returns the `synapse_novel.py review` command they run at a terminal. Never decide for them. |
 | `synapse_run_status` | Read task states for one run or every run in the folder. |
 | `synapse_report` | Produce a plain-text report of results a person accepted. Unreviewed output is never included. |
 | `synapse_plan` | Show the deterministic file layout derived from one idea and preset. Calls no model and writes nothing. |

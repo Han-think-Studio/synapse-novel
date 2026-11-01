@@ -8,7 +8,7 @@ Synapse Novel은 소설을 비트 단위로 계획하고 검사하는 공개 작
 
 [연결 안내서](CONNECT.ko.md)에서 Linux와 Windows의 MCP 설정을 확인하세요. CLI는 [판본 안내서](editions/novel/README.ko.md)에 설명되어 있습니다. Python 3.12와 PyYAML이 필요합니다.
 
-소설 CLI 명령은 열 개입니다: `import`, `audit`, `seed`, `plan`, `plan-confirm`, `beat`, `check`, `lock`, `status`, `assemble`. `python editions/novel/synapse_novel.py novel --help`에서 전체 목록을 볼 수 있습니다.
+소설 CLI 명령은 열한 개입니다: `import`, `audit`, `seed`, `plan`, `plan-confirm`, `beat`, `check`, `lock`, `unlock`, `status`, `assemble`. `python editions/novel/synapse_novel.py novel --help`에서 전체 목록을 볼 수 있습니다.
 
 ### 화면으로 쓰기
 
@@ -26,7 +26,7 @@ AI 없이 시작하려면 [씨앗 카드 예시](editions/novel/examples/novel/s
 
 ## 소설 도구 일곱 개
 
-로컬 MCP 서버는 다음 도구를 먼저 나열합니다: `synapse_novel_seed`, `synapse_novel_plan`, `synapse_novel_beat`, `synapse_novel_check`, `synapse_novel_status`, `synapse_novel_import`, `synapse_novel_audit`. 원고 가져오기와 감사 도구는 정본 값을 확인하거나 무엇이든 잠그지 않습니다. 계획 확인, 정본 값 확인, 비트 잠금은 사람이 합니다. 터미널 CLI에서 하거나, 로컬 화면에서 그 창에 찍힌 확인 코드로 합니다. 장면 조립은 CLI나 화면에서 합니다. 이 중 어느 것도 MCP로는 할 수 없습니다. 서버, CLI, 화면은 모델이나 외부 네트워크를 호출하지 않습니다.
+로컬 MCP 서버는 다음 도구를 먼저 나열합니다: `synapse_novel_seed`, `synapse_novel_plan`, `synapse_novel_beat`, `synapse_novel_check`, `synapse_novel_status`, `synapse_novel_import`, `synapse_novel_audit`. 원고 가져오기와 감사 도구는 정본 값을 확인하거나 무엇이든 잠그지 않습니다. 계획 확인, 정본 값 확인, 비트 잠금은 사람이 합니다. 터미널 CLI에서 하거나, 로컬 화면에서 그 창에 찍힌 확인 코드로 합니다. 잠근 박자는 덮어쓰지 않습니다. 다시 검사하려면 사람이 터미널에서 `novel unlock`을 먼저 실행해야 하고, 잠근 본문은 `novel/beats/archive/`에 남습니다. 프리셋 검토도 사람의 확정입니다. `synapse_record_review`는 아무것도 기록하지 않고, 사람이 터미널에서 실행할 `synapse_novel.py review` 명령만 알려 줍니다. 장면 조립은 CLI나 화면에서 합니다. 이 중 어느 것도 MCP로는 할 수 없습니다. 서버, CLI, 화면은 모델이나 외부 네트워크를 호출하지 않습니다.
 
 프리셋과 정본 관련 도구도 [연결 안내서](CONNECT.ko.md)에 있습니다. 이 공개 판에는 `novel_upload_review`와 `novel_philosophy_depth` 두 프리셋 정의가 포함됩니다.
 
