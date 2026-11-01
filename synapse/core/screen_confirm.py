@@ -8,6 +8,10 @@ terminal to print to there is no code, and the screen is told to use the command
 This is not authentication: a program that can read that terminal passes, as with the command line's terminal check.
 An edition offers its confirmations as ``ConfirmAction`` values from its workspace module; the core never imports an
 edition by name (``synapse.core.workspaces`` reads them through the registry).
+
+What a code confirms is fixed when it is asked for. The request keeps the action it was printed for, so a code asked
+for one project never runs in another the shell opened since; and an action with ``pin`` holds the hash of what it
+names (``args["pinned"]``), prints it beside the code, and refuses at the end if the content changed meanwhile.
 """
 
 from __future__ import annotations
@@ -25,6 +29,7 @@ SCREEN_CHANNEL = "screen+code"
 TERMINAL_CHANNEL = "terminal"
 CODE_TTL_SECONDS = 300
 CODE_TRIES = 3
+PINNED = "pinned"
 
 
 class ScreenConfirmError(ValueError):
@@ -50,6 +55,10 @@ class ConfirmAction:
     ``describe(args)`` checks the arguments and says in one line what will be confirmed (it is printed beside the
     code); ``run(args, words=..., channel=...)`` makes the edition's record and returns it. ``fields`` tell the screen
     what to ask for: ``{"name", "label", "kind": "path" | "text" | "choice", "choices"?, "optional"?}``.
+
+    ``pin(args)``, when given, reads what the confirmation names as it is at the request (its hashes); the result is
+    kept as ``args["pinned"]`` for ``describe`` and ``run``, and ``run`` refuses when the content no longer matches.
+    A page cannot send its own ``pinned``.
     """
 
     label: str
@@ -57,6 +66,7 @@ class ConfirmAction:
     run: Callable[..., Mapping[str, Any]]
     fields: tuple[Mapping[str, Any], ...] = ()
     command: str = ""
+    pin: Callable[[Mapping[str, Any]], Mapping[str, Any]] | None = None
 
 
 def print_to_terminal(line: str) -> bool:
@@ -74,6 +84,7 @@ def print_to_terminal(line: str) -> bool:
 @dataclass
 class _Pending:
     action: str
+    handler: ConfirmAction
     args: dict[str, Any]
     what: str
     code: str
@@ -109,7 +120,10 @@ class ScreenConfirmations:
         action = self._action(action_name)
         if not isinstance(args, Mapping):
             raise ScreenConfirmError("확정할 내용은 JSON 객체여야 합니다.")
-        what = action.describe(args)
+        held = {key: value for key, value in args.items() if key != PINNED}
+        if action.pin is not None:
+            held[PINNED] = dict(action.pin(held))
+        what = action.describe(held)
         code = f"{secrets.randbelow(1_000_000):06d}"
         if not self.announce(f"[Synapse] 확인 코드 {code} — {what} (5분 안에 화면에 입력)"):
             hint = f" 명령줄: {action.command}" if action.command else ""
@@ -121,7 +135,7 @@ class ScreenConfirmations:
         with self._lock:
             self._prune()
             self._pending[pending_id] = _Pending(
-                str(action_name), dict(args), what, code, self.clock() + CODE_TTL_SECONDS
+                str(action_name), action, held, what, code, self.clock() + CODE_TTL_SECONDS
             )
         return {"pending_id": pending_id, "what": what, "expires_in": CODE_TTL_SECONDS, "tries": CODE_TRIES}
 
@@ -139,6 +153,10 @@ class ScreenConfirmations:
             pending = self._pending.get(pending_id)
             if pending is None:
                 raise ScreenConfirmError("확인 요청이 없거나 5분이 지났습니다. 다시 요청하세요.")
+            if self.actions.get(pending.action) is not pending.handler:
+                # The shell opened a project for this edition since: the printed line named the one open before.
+                del self._pending[pending_id]
+                raise ScreenConfirmError("코드를 받은 뒤 이 판에 프로젝트를 새로 열어 확인 요청을 지웠습니다. 다시 요청하세요.")
             if pending.running:
                 raise ScreenConfirmError("이 확인 요청은 지금 처리 중입니다.")
             if not hmac.compare_digest(code.strip(), pending.code):
@@ -149,7 +167,7 @@ class ScreenConfirmations:
                 raise ScreenConfirmError(f"코드가 맞지 않습니다. 남은 시도 {pending.tries}번.")
             pending.running = True
         try:
-            record = self._action(pending.action).run(pending.args, words=words, channel=SCREEN_CHANNEL)
+            record = pending.handler.run(pending.args, words=words, channel=SCREEN_CHANNEL)
         except BaseException:
             with self._lock:
                 pending.running = False
@@ -168,6 +186,7 @@ class ScreenConfirmations:
 __all__ = [
     "CODE_TRIES",
     "CODE_TTL_SECONDS",
+    "PINNED",
     "SCREEN_CHANNEL",
     "TERMINAL_CHANNEL",
     "ConfirmAction",

@@ -6,6 +6,10 @@ value, confirming the plan and locking a beat are a person's confirmations and r
 prints in its own terminal (``novel.flow``). Each such confirmation is logged in the project's
 ``novel/screen-confirmations.jsonl``. No model is called: the person's own assistant writes each beat from the request
 shown here.
+
+A confirmation holds what it names when the code is asked for (the value's text, the plan hash, the checked beat's
+text hash), prints it beside the code, and is refused if that changed before the code came back. The tab's writes
+take one lock, so nothing changes between that last look and the record.
 """
 
 from __future__ import annotations
@@ -13,6 +17,7 @@ from __future__ import annotations
 import hashlib
 import json
 import tempfile
+import threading
 from collections.abc import Callable, Mapping
 from dataclasses import dataclass
 from datetime import datetime
@@ -23,7 +28,12 @@ from urllib.parse import urlsplit
 
 from synapse.core import canon_values_cli, canon_values_read
 from synapse.core.run import append_artifact
-from synapse.core.screen_confirm import ConfirmAction, ScreenConfirmations, ScreenConfirmError
+from synapse.core.screen_confirm import (
+    PINNED,
+    ConfirmAction,
+    ScreenConfirmations,
+    ScreenConfirmError,
+)
 from synapse.novel import edition_flow
 from synapse.novel.edition_flow import FlowError
 from synapse.novel.flow_steps import STEPS, current_edition_step
@@ -84,9 +94,14 @@ def _through_file(value: Any, run: Callable[[Path], dict[str, Any]]) -> dict[str
         return run(path)
 
 
+def _sha256(value: Any) -> str:
+    return hashlib.sha256(json.dumps(value, ensure_ascii=False, sort_keys=True).encode("utf-8")).hexdigest()
+
+
 def build_edition_app(project_path: str | Path, *, announce: Callable[[str], bool] | None = None) -> EditionApp:
     root = Path(project_path).expanduser().resolve()
     novel = root / "novel"
+    lock = threading.Lock()
 
     def _values() -> list[dict[str, Any]]:
         if not (novel / "seed.json").is_file():
@@ -173,48 +188,94 @@ def build_edition_app(project_path: str | Path, *, announce: Callable[[str], boo
         if route in CONFIRMING_ROUTES:
             return (428, {"error": "이 확정은 셸의 확인 코드로만 합니다.", "needs_code": True, "action": "novel.flow"})
         try:
-            result = _dispatch(route, document)
+            with lock:
+                result = _dispatch(route, document)
         except (FlowError, canon_values_cli.CliError, canon_values_cli.NotDone, ScreenConfirmError, OSError, ValueError) as exc:
             return (_status_of(exc), {"error": getattr(exc, "message", str(exc))})
         if result is _NO_ROUTE:
             return (404, {"error": "요청한 경로가 없습니다."})
         return (200, result)
 
+    def _target(route: str, document: Mapping[str, Any]) -> dict[str, Any]:
+        """What a confirming route names, as it is now; a code holds this from its request."""
+
+        if route == "/api/novel/value-confirm":
+            key = document.get("key")
+            value = next((entry for entry in _values() if entry["key"] == key), None) if isinstance(key, str) else None
+            if value is None:
+                raise ScreenConfirmError("확정할 값을 찾을 수 없습니다.")
+            return {"value_sha256": _sha256([value["key"], value["kind"], value["text"]]), "text": value["text"]}
+        if route == "/api/novel/plan-confirm":
+            try:
+                payload, plan_hash, _current = edition_flow._plan_payload(root)
+            except FlowError as exc:
+                raise ScreenConfirmError(exc.message) from exc
+            return {"plan_sha256": plan_hash, "scenes": len(payload.get("scenes") or [])}
+        scene, beat = _scene_beat(document)
+        if edition_flow._SCENE_ID.fullmatch(scene) is None:
+            raise ScreenConfirmError("장면 ID 형식이 맞지 않습니다.")
+        try:
+            text = edition_flow._beat_path(root, scene, beat).read_bytes()
+        except OSError as exc:
+            raise ScreenConfirmError("먼저 박자 본문을 검사해 주세요.") from exc
+        return {"text_sha256": hashlib.sha256(text).hexdigest()}
+
+    def _pin(args: Mapping[str, Any]) -> dict[str, Any]:
+        route, document = args.get("route"), args.get("payload")
+        if not isinstance(route, str) or route not in CONFIRMING_ROUTES or not isinstance(document, Mapping):
+            raise ScreenConfirmError("셸의 코드로 확정하는 경로가 아닙니다.")
+        with lock:
+            return _target(route, document)
+
     def _describe(args: Mapping[str, Any]) -> str:
         route, document = args.get("route"), args.get("payload")
-        if route not in CONFIRMING_ROUTES or not isinstance(document, Mapping):
+        if not isinstance(route, str) or route not in CONFIRMING_ROUTES or not isinstance(document, Mapping):
             raise ScreenConfirmError("셸의 코드로 확정하는 경로가 아닙니다.")
+        pinned = args.get(PINNED) or {}
         detail = ""
         if route == "/api/novel/value-confirm":
-            detail = f" {document.get('key')}"
+            text = " ".join(str(pinned.get("text", "")).split())
+            detail = f" {document.get('key')} = {text[:40]}{'…' if len(text) > 40 else ''}"
+        elif route == "/api/novel/plan-confirm":
+            detail = f" (장면 {pinned.get('scenes')}개, plan {str(pinned.get('plan_sha256'))[:12]})"
         elif route == "/api/novel/lock":
-            detail = f" {document.get('scene')} · {document.get('beat')}번째 박자"
+            detail = f" {document.get('scene')} · {document.get('beat')}번째 박자 (본문 {str(pinned.get('text_sha256'))[:12]})"
         return f"소설 {root.name}: {CONFIRMING_ROUTES[route]}{detail}"
 
     def _run(args: Mapping[str, Any], *, words: str, channel: str) -> dict[str, Any]:
         route, document = args["route"], dict(args["payload"])
-        try:
-            result = _dispatch(route, document, words=words)
-        except (FlowError, canon_values_cli.CliError, canon_values_cli.NotDone) as exc:
-            raise ScreenConfirmError(getattr(exc, "message", str(exc))) from exc
-        append_artifact(
-            novel / "screen-confirmations.jsonl",
-            run_id=f"novel:{root.name}",
-            kind="screen_confirmation",
-            payload={
-                "route": route,
-                "payload_sha256": hashlib.sha256(
-                    json.dumps(args["payload"], ensure_ascii=False, sort_keys=True).encode("utf-8")
-                ).hexdigest(),
-                "words": words if isinstance(words, str) else "",
-                "channel": channel,
-                "at": _now(),
-            },
-        )
+        with lock:
+            if _target(route, document) != args.get(PINNED):
+                raise ScreenConfirmError("코드를 받은 뒤 확정할 내용이 바뀌었습니다. 화면을 새로 보고 다시 요청하세요.")
+            try:
+                result = _dispatch(route, document, words=words)
+            except (FlowError, canon_values_cli.CliError, canon_values_cli.NotDone) as exc:
+                raise ScreenConfirmError(getattr(exc, "message", str(exc))) from exc
+            append_artifact(
+                novel / "screen-confirmations.jsonl",
+                run_id=f"novel:{root.name}",
+                kind="screen_confirmation",
+                payload={
+                    "route": route,
+                    "payload_sha256": _sha256(args["payload"]),
+                    "pinned": args.get(PINNED),
+                    "words": words if isinstance(words, str) else "",
+                    "channel": channel,
+                    "at": _now(),
+                },
+            )
         return result if isinstance(result, dict) else {"result": result}
 
     confirmations = ScreenConfirmations(
-        {"novel.flow": ConfirmAction(label="소설 흐름 확정", describe=_describe, run=_run, command="python editions/novel/synapse_novel.py novel --help")},
+        {
+            "novel.flow": ConfirmAction(
+                label="소설 흐름 확정",
+                describe=_describe,
+                run=_run,
+                command="python editions/novel/synapse_novel.py novel --help",
+                pin=_pin,
+            )
+        },
         **({"announce": announce} if announce is not None else {}),
     )
     return EditionApp(SimpleNamespace(root=root), confirmations, _get, _post)

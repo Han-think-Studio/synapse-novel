@@ -12,6 +12,7 @@ import json
 import secrets
 import sys
 import threading
+import traceback
 import webbrowser
 from collections.abc import Callable
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
@@ -116,8 +117,18 @@ def create_shell(
             else:
                 self._send(reply.status, reply.body, reply.content_type)
 
+        def _failed(self, method: str) -> None:
+            # The last door, as in the console: a request that breaks a route still gets a JSON answer.
+            print(f"[Synapse shell] unexpected {method} failure: {urlsplit(self.path).path}", file=sys.stderr)
+            traceback.print_exc()
+            self._json(500, {"error": "셸 내부 오류로 요청을 처리하지 못했습니다."})
+
         def do_GET(self) -> None:
-            reply = shell.answer_get(self.path, page_config=page_config)
+            try:
+                reply = shell.answer_get(self.path, page_config=page_config)
+            except Exception:  # noqa: BLE001 - final HTTP boundary must preserve a JSON response
+                self._failed("GET")
+                return
             if reply is not None:
                 self._reply(reply)
                 return
@@ -141,6 +152,9 @@ def create_shell(
                 reply = shell.answer_post(route, self._read_json)
             except (ValueError, OSError) as exc:
                 self._json(422, {"error": str(exc)})
+                return
+            except Exception:  # noqa: BLE001 - final HTTP boundary must preserve a JSON response
+                self._failed("POST")
                 return
             if reply is None:
                 self._json(404, {"error": "요청한 경로가 없습니다."})
