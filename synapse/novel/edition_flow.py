@@ -345,20 +345,17 @@ def _flow_lock(project: Path):
         yield
         return
     path.parent.mkdir(parents=True, exist_ok=True)
+    token = f"{os.getpid()} {uuid.uuid4().hex}"
     deadline = time.monotonic() + _LOCK_WAIT_SECONDS
     while True:
         try:
             descriptor = os.open(path, os.O_CREAT | os.O_EXCL | os.O_WRONLY, 0o600)
         except FileExistsError as exc:
             if time.monotonic() > deadline:
-                raise FlowError(
-                    canon_values_cli.CANNOT_RUN,
-                    "다른 작업이 이 프로젝트를 쓰는 중입니다(novel/.flow.lock). 끝난 뒤 다시 하세요. "
-                    "멈춘 작업이 남긴 잠금이면 사람이 그 파일을 지우세요.",
-                ) from exc
+                raise FlowError(canon_values_cli.CANNOT_RUN, _held_message(path)) from exc
             time.sleep(0.05)
             continue
-        os.write(descriptor, f"{os.getpid()}\n".encode("ascii"))
+        os.write(descriptor, token.encode("ascii"))
         os.close(descriptor)
         break
     held.add(path)
@@ -366,7 +363,26 @@ def _flow_lock(project: Path):
         yield
     finally:
         held.discard(path)
-        path.unlink(missing_ok=True)
+        # Remove only this holder's own file: if a person deleted it and another writer took the lock meanwhile,
+        # that writer's lock stays (review N3).
+        try:
+            if path.read_text(encoding="ascii") == token:
+                path.unlink()
+        except (OSError, UnicodeError):
+            pass
+
+
+def _held_message(path: Path) -> str:
+    try:
+        holder = path.read_text(encoding="ascii").split(" ", 1)[0]
+        age = int(time.time() - path.stat().st_mtime)
+        who = f"프로세스 {holder}, {age}초 전부터"
+    except (OSError, UnicodeError, ValueError):
+        who = "누가 잡았는지 읽을 수 없음"
+    return (
+        f"다른 작업이 이 프로젝트를 쓰는 중입니다(novel/.flow.lock, {who}). 끝난 뒤 다시 하세요. "
+        "그 프로세스가 이미 멈춘 것을 확인했을 때만 사람이 그 파일을 지우세요."
+    )
 
 
 def _archive_beat_text(project: Path, scene: str, beat: int) -> str | None:

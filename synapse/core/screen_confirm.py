@@ -67,6 +67,8 @@ class ConfirmAction:
     fields: tuple[Mapping[str, Any], ...] = ()
     command: str = ""
     pin: Callable[[Mapping[str, Any]], Mapping[str, Any]] | None = None
+    # Exception types this action raises only before it writes anything; like ScreenConfirmError they keep the code.
+    refusals: tuple[type[BaseException], ...] = ()
 
 
 def print_to_terminal(line: str) -> bool:
@@ -168,14 +170,15 @@ class ScreenConfirmations:
             pending.running = True
         try:
             record = pending.handler.run(pending.args, words=words, channel=SCREEN_CHANNEL)
-        except ValueError:
-            # A refusal (too few words, changed content, a rule): nothing was recorded, so the code may be tried again.
+        except (ScreenConfirmError, *pending.handler.refusals):
+            # An action's own refusal (too few words, changed content, a rule), raised before it writes anything: the
+            # code may be tried again. Actions raise ScreenConfirmError, or a type they declare in ``refusals``.
             with self._lock:
                 pending.running = False
             raise
         except BaseException as exc:
-            # Anything else may have stopped after part of the record was written (crosscheck C1): the code is spent,
-            # so it can never record the same confirmation twice.
+            # Anything else, a record layer's ValueError included, may have stopped after part of the record was
+            # written (crosscheck C1, review N0): the code is spent, so it can never record the same thing twice.
             with self._lock:
                 self._pending.pop(pending_id, None)
             raise ScreenConfirmError(
