@@ -71,7 +71,10 @@ def refusal(method: str, headers: Any, port: int, session_secret: str | None = N
         return "content_type"
     if session_secret is not None:
         sent = headers.get(SESSION_HEADER) if hasattr(headers, "get") else None
-        if not isinstance(sent, str) or not hmac.compare_digest(sent.strip(), session_secret):
+        # Compared as bytes: a header with non-ASCII text is refused, not a crash (crosscheck C5).
+        if not isinstance(sent, str) or not hmac.compare_digest(
+            sent.strip().encode("utf-8", "surrogateescape"), session_secret.encode("utf-8")
+        ):
             return "session"
     return None
 

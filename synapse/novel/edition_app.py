@@ -142,7 +142,7 @@ def build_edition_app(project_path: str | Path, *, announce: Callable[[str], boo
             return (_status_of(exc), {"error": getattr(exc, "message", str(exc))})
         return _NO_ROUTE
 
-    def _dispatch(route: str, document: dict[str, Any], *, words: str = "") -> Any:
+    def _dispatch(route: str, document: dict[str, Any], *, words: str = "", pinned: Mapping[str, Any] | None = None) -> Any:
         if route == "/api/novel/seed":
             return _through_file(document.get("seed"), lambda path: edition_flow.seed_project(root, path))
         if route == "/api/novel/plan":
@@ -178,10 +178,15 @@ def build_edition_app(project_path: str | Path, *, announce: Callable[[str], boo
                 ask=lambda: spoken, out=lambda _message: None, now=_now,
             )
         if route == "/api/novel/plan-confirm":
-            return edition_flow._confirm_plan(root, words=_words(words), now=_now())
+            return edition_flow._confirm_plan(
+                root, words=_words(words), now=_now(), expected_plan_sha256=(pinned or {}).get("plan_sha256")
+            )
         if route == "/api/novel/lock":
             scene, beat = _scene_beat(document)
-            return edition_flow._lock_beat(root, scene, beat, words=_words(words), now=_now())
+            return edition_flow._lock_beat(
+                root, scene, beat, words=_words(words), now=_now(),
+                expected_text_sha256=(pinned or {}).get("text_sha256"),
+            )
         return _NO_ROUTE
 
     def _post(route: str, document: dict[str, Any]) -> tuple[int, Any]:
@@ -248,7 +253,7 @@ def build_edition_app(project_path: str | Path, *, announce: Callable[[str], boo
             if _target(route, document) != args.get(PINNED):
                 raise ScreenConfirmError("코드를 받은 뒤 확정할 내용이 바뀌었습니다. 화면을 새로 보고 다시 요청하세요.")
             try:
-                result = _dispatch(route, document, words=words)
+                result = _dispatch(route, document, words=words, pinned=args.get(PINNED))
             except (FlowError, canon_values_cli.CliError, canon_values_cli.NotDone) as exc:
                 raise ScreenConfirmError(getattr(exc, "message", str(exc))) from exc
             append_artifact(

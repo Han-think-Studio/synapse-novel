@@ -159,7 +159,7 @@ class ScreenConfirmations:
                 raise ScreenConfirmError("코드를 받은 뒤 이 판에 프로젝트를 새로 열어 확인 요청을 지웠습니다. 다시 요청하세요.")
             if pending.running:
                 raise ScreenConfirmError("이 확인 요청은 지금 처리 중입니다.")
-            if not hmac.compare_digest(code.strip(), pending.code):
+            if not hmac.compare_digest(code.strip().encode("utf-8"), pending.code.encode("utf-8")):
                 pending.tries -= 1
                 if pending.tries <= 0:
                     del self._pending[pending_id]
@@ -168,10 +168,19 @@ class ScreenConfirmations:
             pending.running = True
         try:
             record = pending.handler.run(pending.args, words=words, channel=SCREEN_CHANNEL)
-        except BaseException:
+        except ValueError:
+            # A refusal (too few words, changed content, a rule): nothing was recorded, so the code may be tried again.
             with self._lock:
                 pending.running = False
             raise
+        except BaseException as exc:
+            # Anything else may have stopped after part of the record was written (crosscheck C1): the code is spent,
+            # so it can never record the same confirmation twice.
+            with self._lock:
+                self._pending.pop(pending_id, None)
+            raise ScreenConfirmError(
+                "확정하는 도중 멈춰 기록이 일부만 남았을 수 있습니다. 상태를 확인하고, 필요하면 새로 요청하세요."
+            ) from exc
         with self._lock:
             self._pending.pop(pending_id, None)
         return {"confirmed": pending.action, "what": pending.what, "record": dict(record)}

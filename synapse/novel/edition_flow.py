@@ -10,8 +10,11 @@ import re
 import shlex
 import subprocess
 import sys
+import threading
+import time
 import uuid
 from collections.abc import Callable, Mapping, Sequence
+from contextlib import contextmanager
 from dataclasses import asdict
 from datetime import datetime
 from pathlib import Path
@@ -322,6 +325,50 @@ def _latest_lock(project: Path, scene: str, beat: int) -> dict[str, Any] | None:
     return current
 
 
+_HELD = threading.local()
+_LOCK_WAIT_SECONDS = 30.0
+
+
+@contextmanager
+def _flow_lock(project: Path):
+    """One writer at a time for a project's plan, beats, receipts and locks, across processes (crosscheck L1).
+
+    Every channel (CLI, MCP, the screen) writes through these functions, so they share this lock. A lock left by a
+    process that died stays until a person removes ``novel/.flow.lock``, as with the canon values lock.
+    """
+
+    path = (_novel(project) / ".flow.lock").resolve()
+    held = getattr(_HELD, "paths", None)
+    if held is None:
+        held = _HELD.paths = set()
+    if path in held:
+        yield
+        return
+    path.parent.mkdir(parents=True, exist_ok=True)
+    deadline = time.monotonic() + _LOCK_WAIT_SECONDS
+    while True:
+        try:
+            descriptor = os.open(path, os.O_CREAT | os.O_EXCL | os.O_WRONLY, 0o600)
+        except FileExistsError as exc:
+            if time.monotonic() > deadline:
+                raise FlowError(
+                    canon_values_cli.CANNOT_RUN,
+                    "다른 작업이 이 프로젝트를 쓰는 중입니다(novel/.flow.lock). 끝난 뒤 다시 하세요. "
+                    "멈춘 작업이 남긴 잠금이면 사람이 그 파일을 지우세요.",
+                ) from exc
+            time.sleep(0.05)
+            continue
+        os.write(descriptor, f"{os.getpid()}\n".encode("ascii"))
+        os.close(descriptor)
+        break
+    held.add(path)
+    try:
+        yield
+    finally:
+        held.discard(path)
+        path.unlink(missing_ok=True)
+
+
 def _archive_beat_text(project: Path, scene: str, beat: int) -> str | None:
     """Keep the beat's saved text under ``beats/archive/`` (named by its hash) before anything replaces it."""
 
@@ -616,16 +663,25 @@ def plan_project(project: str | Path, plan_file: str | Path) -> dict[str, Any]:
     return {"problems": [], "plan_sha256": plan_hash, "scenes": scenes, "plan_file": str(_plan_path(root))}
 
 
-def _confirm_plan(project: str | Path, *, words: str, now: str) -> dict[str, Any]:
+def _confirm_plan(
+    project: str | Path, *, words: str, now: str, expected_plan_sha256: str | None = None
+) -> dict[str, Any]:
     root = _root(project)
-    _payload, plan_hash, current = _plan_payload(root)
-    if not current:
-        raise FlowError(
-            canon_values_cli.NOT_DONE,
-            "씨앗 또는 정본 값이 바뀌어 계획을 다시 만들어야 합니다.",
-            {"plan_sha256": plan_hash, "current": False},
-        )
-    _append_event(root, "plan_confirmed", {"plan_sha256": plan_hash, "words": words, "confirmed_at": now})
+    with _flow_lock(root):
+        _payload, plan_hash, current = _plan_payload(root)
+        if not current:
+            raise FlowError(
+                canon_values_cli.NOT_DONE,
+                "씨앗 또는 정본 값이 바뀌어 계획을 다시 만들어야 합니다.",
+                {"plan_sha256": plan_hash, "current": False},
+            )
+        if expected_plan_sha256 is not None and plan_hash != expected_plan_sha256:
+            raise FlowError(
+                canon_values_cli.NOT_DONE,
+                "보여 드린 뒤 계획이 바뀌어 확정하지 않았습니다. 바뀐 계획을 다시 보고 확정하세요.",
+                {"shown": expected_plan_sha256, "now": plan_hash},
+            )
+        _append_event(root, "plan_confirmed", {"plan_sha256": plan_hash, "words": words, "confirmed_at": now})
     return {"confirmed": plan_hash, "words": words, "at": now, "plan_file": str(_plan_path(root))}
 
 
@@ -779,22 +835,31 @@ def check_beat(project: str | Path, scene: str, beat: int, text: str, *, now: st
         # text file does not change its fingerprint merely by being checked.
         text = text.replace("\r\n", "\n").replace("\r", "\n")
     root = _root(project)
+    _refuse_standing_lock(root, scene, beat)
+    result = _evaluate_text(root, scene, beat, text, now=now)
+    with _flow_lock(root):
+        # A person may have locked the beat while it was being evaluated (crosscheck L1): look again before writing.
+        latest = _refuse_standing_lock(root, scene, beat)
+        if latest is not None:
+            _archive_beat_text(root, scene, beat)
+        _write_bytes(_beat_path(root, scene, beat), text.encode("utf-8"), overwrite=True)
+        _write_json(_receipt_path(root, scene, beat), {"schema": CHECK_SCHEMA, "check": result}, overwrite=True)
+    return result
+
+
+def _refuse_standing_lock(root: Path, scene: str, beat: int) -> dict[str, Any] | None:
+    """The beat's lock if it is stale (or ``None``); a standing lock refuses (governance survey E1, DEC-0256)."""
+
     latest = _latest_lock(root, scene, beat)
     if latest is not None:
         payload, plan_hash, current = _plan_payload(root)
         if _lock_stale_reason(root, scene, beat, latest, payload, plan_hash, current) is None:
-            # A person locked this text; checking again would replace it (governance survey E1, DEC-0256).
             raise FlowError(
                 canon_values_cli.NOT_DONE,
                 "이 박자는 사람이 잠갔습니다. 잠근 본문은 덮어쓰지 않습니다. 고치려면 터미널에서 "
                 f"`novel unlock --project ... --scene {scene} --beat {beat}`으로 잠금을 푼 뒤 다시 검사하세요.",
             )
-    result = _evaluate_text(root, scene, beat, text, now=now)
-    if latest is not None:
-        _archive_beat_text(root, scene, beat)
-    _write_bytes(_beat_path(root, scene, beat), text.encode("utf-8"), overwrite=True)
-    _write_json(_receipt_path(root, scene, beat), {"schema": CHECK_SCHEMA, "check": result}, overwrite=True)
-    return result
+    return latest
 
 
 def _current_block_hash(project: Path, scene: Mapping[str, Any]) -> str:
@@ -934,25 +999,42 @@ def _unlock_beat(project: str | Path, scene: str, beat: int, *, words: str, now:
     """Take back a person's lock, keeping the locked text in ``beats/archive/`` (DEC-0256)."""
 
     root = _root(project)
-    latest = _latest_lock(root, scene, beat)
-    if latest is None:
-        raise FlowError(canon_values_cli.NOT_DONE, "이 박자에는 풀 잠금이 없습니다.")
-    record = latest.get("payload") if isinstance(latest.get("payload"), Mapping) else {}
-    payload = {
-        "scene": scene,
-        "beat": beat,
-        "lock_artifact": latest.get("artifact_id"),
-        "text_sha256": record.get("text_sha256"),
-        "archived_file": _archive_beat_text(root, scene, beat),
-        "words": words,
-        "unlocked_at": now,
-    }
-    event = _append_event(root, "beat_unlocked", payload)
+    with _flow_lock(root):
+        latest = _latest_lock(root, scene, beat)
+        if latest is None:
+            raise FlowError(canon_values_cli.NOT_DONE, "이 박자에는 풀 잠금이 없습니다.")
+        record = latest.get("payload") if isinstance(latest.get("payload"), Mapping) else {}
+        payload = {
+            "scene": scene,
+            "beat": beat,
+            "lock_artifact": latest.get("artifact_id"),
+            "text_sha256": record.get("text_sha256"),
+            "locked_copy": record.get("locked_copy"),
+            "archived_file": _archive_beat_text(root, scene, beat),
+            "words": words,
+            "unlocked_at": now,
+        }
+        event = _append_event(root, "beat_unlocked", payload)
     return {"unlocked": payload, "artifact_id": event["artifact_id"]}
 
 
-def _lock_beat(project: str | Path, scene: str, beat: int, *, words: str, now: str) -> dict[str, Any]:
+def _lock_beat(
+    project: str | Path,
+    scene: str,
+    beat: int,
+    *,
+    words: str,
+    now: str,
+    expected_text_sha256: str | None = None,
+) -> dict[str, Any]:
     root = _root(project)
+    with _flow_lock(root):
+        return _lock_beat_locked(root, scene, beat, words=words, now=now, expected_text_sha256=expected_text_sha256)
+
+
+def _lock_beat_locked(
+    root: Path, scene: str, beat: int, *, words: str, now: str, expected_text_sha256: str | None
+) -> dict[str, Any]:
     payload, plan_hash, current, _seed, _store, _checked = _load_live_state(root)
     _require_confirmed(root, plan_hash, current)
     _scene_index, scene_data = _scene(payload, scene)
@@ -967,6 +1049,11 @@ def _lock_beat(project: str | Path, scene: str, beat: int, *, words: str, now: s
         raise FlowError(canon_values_cli.NOT_DONE, "검사한 박자 본문을 찾을 수 없습니다.") from exc
     except UnicodeError as exc:
         raise FlowError(canon_values_cli.CANNOT_RUN, "검사한 박자 본문이 UTF-8이 아닙니다.") from exc
+    if expected_text_sha256 is not None and _hash_bytes(text.encode("utf-8")) != expected_text_sha256:
+        raise FlowError(
+            canon_values_cli.NOT_DONE,
+            "보여 드린 뒤 박자 본문이 바뀌어 잠그지 않았습니다. 바뀐 본문을 다시 검사하고 잠그세요.",
+        )
     checked = _evaluate_text(root, scene, beat, text, now=now)
     if not checked["lockable"]:
         raise FlowError(
@@ -975,6 +1062,8 @@ def _lock_beat(project: str | Path, scene: str, beat: int, *, words: str, now: s
             {"scene": scene, "beat": beat, "lockable": False, "unchecked": checked["unchecked"]},
         )
     _write_json(_receipt_path(root, scene, beat), {"schema": CHECK_SCHEMA, "check": checked}, overwrite=True)
+    # The locked text, kept untouched beside the working file (crosscheck L3): an edit made later cannot lose it.
+    locked_copy = _archive_beat_text(root, scene, beat)
     payload_record = {
         "scene": scene,
         "beat": beat,
@@ -994,6 +1083,7 @@ def _lock_beat(project: str | Path, scene: str, beat: int, *, words: str, now: s
         ],
         "words": words,
         "locked_at": now,
+        "locked_copy": locked_copy,
     }
     event = _append_event(root, "beat_locked", payload_record)
     return {"locked": {"scene": scene, "beat": beat, **payload_record}, "artifact_id": event["artifact_id"]}
@@ -1060,7 +1150,9 @@ def _dispatch(args: argparse.Namespace, *, ask: Callable[[], str], interactive: 
             out(f"  - {scene['id']}: {len(scene['beats'])}개 박자")
         out(f"  plan_sha256: {plan_hash}")
         words = canon_values_cli._words(ask, out, "계획이 맞으면 본인 말로 한 줄 확인해 주세요:")
-        return canon_values_cli.DONE, _confirm_plan(args.project, words=words, now=now())
+        return canon_values_cli.DONE, _confirm_plan(
+            args.project, words=words, now=now(), expected_plan_sha256=plan_hash
+        )
     if args.command == "beat":
         return canon_values_cli.DONE, request_beat(
             args.project, args.scene, args.beat, model=args.model or "", now=now()
@@ -1116,7 +1208,10 @@ def _dispatch(args: argparse.Namespace, *, ask: Callable[[], str], interactive: 
         for item in checked["possible"]:
             out(f"  - 가능한 충돌: {json.dumps(item, ensure_ascii=False, sort_keys=True)}")
         words = canon_values_cli._words(ask, out, "이 박자를 잠그려면 본인 말로 한 줄 확인해 주세요:")
-        return canon_values_cli.DONE, _lock_beat(args.project, args.scene, args.beat, words=words, now=now())
+        return canon_values_cli.DONE, _lock_beat(
+            args.project, args.scene, args.beat, words=words, now=now(),
+            expected_text_sha256=_hash_bytes(text.encode("utf-8")),
+        )
     if args.command == "status":
         result = status(args.project)
         stale_plan = result.get("plan") is not None and result["plan"].get("current") is False
